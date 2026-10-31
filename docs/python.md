@@ -144,6 +144,29 @@ PROJJSON. On import, the geometry column is found by its GeoArrow metadata (WKB,
 GDAL's `ogc.wkb`, GeoParquet `geo` metadata (as `pyarrow.parquet` keeps it), or a binary column
 named `geometry` or `wkb_geometry`; struct columns are flattened and lists become JSON, as in GDAL.
 
+#### GeoParquet from Arrow tables
+
+`terrio.write_geoparquet_layers` writes Arrow tables straight to GeoParquet, keeping their Arrow
+types (float32, lists, structs, timestamps), with the layout options of analysis archives:
+several layers in one file told apart by a layer column (union schema; identity columns
+non-nullable), row groups that end at every layer boundary, a GeoParquet 1.1 `bbox` struct
+covering, Hilbert order within each layer (bit for bit DuckDB spatial's `ST_Hilbert` of the bbox
+centres over the layer's extent) with an optional `hilbert_index` column, the ZSTD level,
+dictionaries on string columns only and pyarrow-style chunk statistics.
+
+```python
+# One table with a `layer` column, split in first-appearance order; the ras2cng archive profile.
+terrio.write_geoparquet_layers(table, "Model.g01.parquet", profile="archive",
+                               identity={"mesh_cells": ["mesh_name", "cell_id"]})
+# Or (name, table) pairs and explicit options.
+terrio.write_geoparquet_layers([("cells", cells), ("faces", faces)], "mesh.parquet",
+                               layer_column="layer", compression="zstd", compression_level=3,
+                               order="hilbert", hilbert_column="hilbert_index")
+```
+
+The archive profile writes the rows, order, schema, row groups and `geo` metadata that
+ras2cng's pyarrow writer gives the same table; see `terrio::geoparquet` for the options.
+
 `scripts/compare_arrow_with_gdal.py` checks both directions on real files against GDAL's Arrow
 streams (`ogr.Layer.GetArrowStreamAsPyArrow`, `ogr.Layer.WriteArrow`), pyarrow and GeoPandas:
 geometries are WKB-identical and attribute values equal.

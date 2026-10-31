@@ -10,6 +10,20 @@
   messages) is in the release. netCDF-4 variables are now listed in creation order, as
   netCDF-C lists them (they were in link-storage order), and deflated one-element chunks
   that 0.9.1 refused ("DEFLATE stream did not finish") read, as h5py reads them.
+- GeoParquet from Arrow record batches (`terrio::geoparquet::write_arrow_layers`, Python
+  `terrio.write_geoparquet_layers`), keeping the Arrow column types, with archive layout options:
+  several layers in one file with a layer column and a union schema (identity columns
+  non-nullable), row groups ending at layer boundaries, a GeoParquet 1.1 `bbox` struct (or flat)
+  covering, Hilbert order within each layer bit-identical to DuckDB spatial's `ST_Hilbert` with an
+  optional `hilbert_index` column, the ZSTD level, dictionaries on Utf8 columns only and chunk
+  statistics without a page index. The `archive` profile reproduces ras2cng's archive files
+  (rows, order, schema, row groups and `geo` metadata).
+- Arrow and Parquet move to major 59 (arrow 59.0, parquet 59.0, the versions
+  ras-commander-fast-hdf builds with), so the HEC-RAS engine's record batches pass to
+  `terrio::geoparquet` without conversion. wbvector's own GeoParquet support (parquet
+  58) is no longer built: terrio's GeoParquet driver already read and wrote `.parquet`,
+  and a GeoParquet file without that extension is now recognized by its `PAR1`
+  signature with terrio's driver.
 - SRTM HGT tiles are read and written (the `SRTMHGT` driver), as GDAL's SRTMHGT
   driver does: 3", 1" and 0.5" tiles georeferenced from their name
   (`N37W120.hgt`), `.hgt.zip` archives, and the NASADEM and water body variants.

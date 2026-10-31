@@ -455,8 +455,6 @@ impl VectorDriver {
             Self::GeoJSON => F::GeoJson,
             Self::TopoJSON => F::TopoJson,
             Self::GPKG => F::GeoPackage,
-            #[cfg(feature = "parquet")]
-            Self::Parquet => F::GeoParquet,
             Self::FlatGeobuf => F::FlatGeobuf,
             Self::Shapefile => F::Shapefile,
             Self::KML => F::Kml,
@@ -466,7 +464,7 @@ impl VectorDriver {
             Self::MapInfo => F::MapInfoMif,
             #[cfg(feature = "osm")]
             Self::OSM => F::OsmPbf,
-            #[cfg(not(feature = "parquet"))]
+            // terrio's own driver (`drivers::vector::geoparquet`).
             Self::Parquet => return None,
             #[cfg(not(feature = "osm"))]
             Self::OSM => return None,

@@ -123,7 +123,7 @@ impl PyArrowTable {
 /// Reads the record batches an object exports through the Arrow PyCapsule interface: a stream
 /// (`__arrow_c_stream__`: pyarrow tables and readers, GeoPandas' `to_arrow()`, Polars data
 /// frames, GDAL layers...) or a struct array (`__arrow_c_array__`: record batches).
-fn read_capsules(obj: &Bound<'_, PyAny>) -> PyResult<Option<(Arc<Schema>, Vec<RecordBatch>)>> {
+pub(crate) fn read_capsules(obj: &Bound<'_, PyAny>) -> PyResult<Option<(Arc<Schema>, Vec<RecordBatch>)>> {
     if obj.hasattr("__arrow_c_stream__")? {
         let capsule = obj.call_method0("__arrow_c_stream__")?.cast_into::<PyCapsule>()?;
         let ptr = capsule.pointer_checked(Some(STREAM))?;

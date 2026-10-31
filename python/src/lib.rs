@@ -5,6 +5,7 @@ mod arrow;
 #[cfg(not(target_os = "emscripten"))]
 mod cli;
 mod focal;
+mod geoparquet;
 mod grid;
 mod manage;
 mod multidim;
@@ -105,6 +106,7 @@ fn _terrio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     vector_geom::register(m)?;
     vsi::register(m)?;
     vector_dataset::register(m)?;
+    geoparquet::register(m)?;
     #[cfg(not(target_os = "emscripten"))]
     cli::register(m)?;
     Ok(())

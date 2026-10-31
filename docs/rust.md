@@ -182,6 +182,13 @@ let back = layer_from_arrow(&table.schema, &table.batches, "countries")?;
 # Ok::<(), terrio::Error>(())
 ```
 
+`terrio::geoparquet::write_arrow_layers` writes Arrow layers (record batches with a WKB geometry
+column) to one GeoParquet file without converting them to a `Layer`, so column types are kept,
+with archive layout options: a layer column with row groups ending at layer boundaries, a union
+schema with non-null identity columns, a `bbox` struct covering, Hilbert order and a
+`hilbert_index` column, the ZSTD level, Utf8-only dictionaries and chunk statistics
+(`GeoParquetWriteOptions::archive()`).
+
 ## ndarray
 
 With the `ndarray` feature (`features = ["ndarray"]`, off by default), raster pixels are
