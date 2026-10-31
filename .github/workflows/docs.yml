@@ -30,12 +30,13 @@ jobs:
           uv pip install -r requirements_docs.txt
           .venv/bin/zensical build
       - uses: actions/upload-pages-artifact@v5
-        if: github.event_name != 'pull_request'
+        if: github.repository == 'opengeos/terrio' && github.event_name != 'pull_request'
         with:
           path: ./site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    # CLB build (terrio-clb): the docs site is opengeos/terrio's; this repo only builds them.
+    if: github.repository == 'opengeos/terrio' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

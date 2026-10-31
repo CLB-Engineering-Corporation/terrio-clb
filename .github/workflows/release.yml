@@ -17,13 +17,16 @@ permissions:
 
 jobs:
   build:
+    # CLB build (terrio-clb): nothing runs on a tag here; wheels come from Release dry run.
+    if: github.repository == 'opengeos/terrio'
     uses: ./.github/workflows/release-build.yml
 
   github-release:
     # Once the packages are on PyPI, so that a release never announces a version that is not.
     needs: [build, publish]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # CLB build (terrio-clb): registries and the release belong to opengeos/terrio only.
+    if: github.repository == 'opengeos/terrio' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -48,7 +51,8 @@ jobs:
   linux-packages:
     # The AUR and COPR packages, once the release's binaries are on GitHub.
     needs: [github-release]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # CLB build (terrio-clb): registries and the release belong to opengeos/terrio only.
+    if: github.repository == 'opengeos/terrio' && startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/linux-packages.yml
     with:
       version: ${{ github.ref_name }}
@@ -59,7 +63,8 @@ jobs:
   publish:
     needs: [build]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # CLB build (terrio-clb): registries and the release belong to opengeos/terrio only.
+    if: github.repository == 'opengeos/terrio' && startsWith(github.ref, 'refs/tags/v')
     environment: pypi
     permissions:
       id-token: write
@@ -81,7 +86,8 @@ jobs:
 
   crates:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # CLB build (terrio-clb): registries and the release belong to opengeos/terrio only.
+    if: github.repository == 'opengeos/terrio' && startsWith(github.ref, 'refs/tags/v')
     environment: crates-io
     permissions:
       id-token: write
@@ -120,7 +126,8 @@ jobs:
 
   npm:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # CLB build (terrio-clb): registries and the release belong to opengeos/terrio only.
+    if: github.repository == 'opengeos/terrio' && startsWith(github.ref, 'refs/tags/v')
     environment: npm
     permissions:
       id-token: write

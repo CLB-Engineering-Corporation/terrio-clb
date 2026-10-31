@@ -1648,18 +1648,18 @@ dependencies = [
 
 [[package]]
 name = "netcdf-core"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac350b18c3ed13bca5604792e03bb9695e4dbe85c23fbab184f2ee7ab6102a74"
+checksum = "c263120d875b555bcd6c3f3f380a4b719ef47b68dae20d59a657cee77edf1bbc"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "netcdf-reader"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7994480109f9c50585741dfa028f656722e0b7384d37effa3a2374f7ff65bcc6"
+checksum = "fe0bc613be39bb169ac13389d82a085b007d4af4fae90eeacae3d28c4f515b92"
 dependencies = [
  "hdf5-reader",
  "memmap2",

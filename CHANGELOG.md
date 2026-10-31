@@ -4,6 +4,12 @@
 
 ### Formats
 
+- NetCDF and HDF5: hdf5-reader, hdf5-core, netcdf-reader and netcdf-core 0.10.1 from
+  crates.io, the release ras-commander-fast-hdf builds with, so one HDF5 reader serves both.
+  The git patch on 0.9.1 is gone: its fix (v1/v2 compound member names, old fill value
+  messages) is in the release. netCDF-4 variables are now listed in creation order, as
+  netCDF-C lists them (they were in link-storage order), and deflated one-element chunks
+  that 0.9.1 refused ("DEFLATE stream did not finish") read, as h5py reads them.
 - HEC-RAS geometry (`.g##.hdf`) and plan (`.p##.hdf`) HDF files are read as
   vector layers (the `HECRAS` driver, `hecras` feature), through the
   [`ras-commander-fast-hdf`](https://crates.io/crates/ras-commander-fast-hdf)
@@ -30,10 +36,6 @@
   `terrio.hecras.write_archive`): a HEC-RAS geometry or plan HDF file straight to an archive
   GeoParquet file (ras2cng's layout), with the layers as Arrow tables so that a caller can add
   its own; refused layers and variables are listed, not fatal. See `docs/hecras.md`.
-- `hdf5-reader` and `netcdf-reader` are the crates.io 0.10 releases; the
-  `[patch]` to a netcdf-rust branch is gone (its fix, roteiro-gis/netcdf-rust#95,
-  is in 0.10).
-
 - GeoParquet from Arrow record batches (`terrio::geoparquet::write_arrow_layers`, Python
   `terrio.write_geoparquet_layers`), keeping the Arrow column types, with archive layout options:
   several layers in one file with a layer column and a union schema (identity columns
