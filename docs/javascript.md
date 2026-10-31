@@ -46,6 +46,12 @@ polygons runs out of memory, but in the memory64 module (see below). `openUrl` r
 spatial index by bounding box, decoding only the features found; a file without one is still read
 whole.
 
+HEC-RAS geometry and plan HDF files (the full module) open as vector layers with `open`, and with
+`openVector(bytes, filename, { layers, openOptions })` to join the results HEC-RAS stored
+(`openOptions: { CELL_SUMMARIES: "Maximum Water Surface" }`; see [HEC-RAS](hecras.md)). The whole
+file is read in memory: opening briefly takes about twice its size, so the 32-bit module reads
+plan files up to somewhat under 2 GB, and the memory64 module larger ones.
+
 JPEG 2000 files decode with the codec of GDAL's JP2OpenJPEG driver (a Rust port of OpenJPEG), with
 their GeoJP2 or GMLJP2 georeferencing: a Sentinel-2 band (`T10SEG_..._B04.jp2`, 10980 x 10980)
 opens in about 6 seconds in Node.js. Written with a nodata value, a JPEG 2000 comes back as a zip

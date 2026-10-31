@@ -218,6 +218,13 @@ let back = layer_from_arrow(&table.schema, &table.batches, "countries")?;
 # Ok::<(), terrio::Error>(())
 ```
 
+`terrio::geoparquet::write_arrow_layers` writes Arrow layers (record batches with a WKB geometry
+column) to one GeoParquet file without converting them to a `Layer`, so column types are kept,
+with archive layout options: a layer column with row groups ending at layer boundaries, a union
+schema with non-null identity columns, a `bbox` struct covering, Hilbert order and a
+`hilbert_index` column, the ZSTD level, Utf8-only dictionaries and chunk statistics
+(`GeoParquetWriteOptions::archive()`).
+
 ## ndarray
 
 With the `ndarray` feature (`features = ["ndarray"]`, off by default), raster pixels are
@@ -592,6 +599,7 @@ the operations and the streams. The other drivers are features:
 | `pointcloud` | on | LAS, LAZ, COPC, EPT, PLY and E57 (the `pointcloud` module). |
 | `lerc` | on | LERC-compressed GeoTIFFs, read and written. |
 | `lzma` | on | LZMA-compressed GeoTIFFs. |
+| `hecras` | off | HEC-RAS geometry and plan HDF files as vector layers, read only (the `HECRAS` driver and the `hecras` module, through the `ras-commander-fast-hdf` engine; needs `netcdf-hdf5`). See [HEC-RAS](hecras.md). |
 | `gdal` | off | The optional GDAL backend: formats terrio has no driver for, through GDAL (needs GDAL installed). See [the GDAL backend](gdal.md#the-optional-gdal-backend). |
 | `ndarray` | off | Raster pixels as `ndarray` arrays, without copying them: views, owned transfers and the masks of lazy reads, with the crate re-exported as `terrio::ndarray`. See [ndarray](#ndarray). |
 

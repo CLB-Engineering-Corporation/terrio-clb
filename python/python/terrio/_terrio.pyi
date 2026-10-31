@@ -34,6 +34,9 @@ __all__ = [
     "info",
     "drivers",
     "write_raster",
+    "write_geoparquet_layers",
+    "hecras_archive_layers",
+    "write_hecras_archive",
     "write_netcdf_groups",
     "write_vector",
     "convert",
@@ -697,14 +700,21 @@ def open(path: str) -> Raster | VectorDataset: ...
 def open_raster(path: str, lazy: bool = False) -> Raster: ...
 def open_vrt(xml: str, sources: Mapping[str, bytes | str | os.PathLike[str]]) -> Raster: ...
 def open_vector(
-    path: str, layers: Sequence[str] | None = None, bbox: _Bounds | None = None
+    path: str,
+    layers: Sequence[str] | None = None,
+    bbox: _Bounds | None = None,
+    options: Mapping[str, str] | None = None,
 ) -> VectorDataset: ...
 def open_bytes(
     data: bytes | bytearray, filename: str, lazy: bool = False
 ) -> Raster | VectorDataset: ...
 def list_layers(path: str) -> list[str]: ...
 def info(
-    path: str, stats: bool = False, layers: Sequence[str] | None = None, hist: bool = False
+    path: str,
+    stats: bool = False,
+    layers: Sequence[str] | None = None,
+    hist: bool = False,
+    options: Mapping[str, str] | None = None,
 ) -> dict[str, Any]: ...
 def drivers() -> list[dict[str, Any]]: ...
 def write_raster(
@@ -720,6 +730,56 @@ def write_netcdf_groups(
     path: str,
     options: Mapping[str, str] | None = None,
 ) -> None: ...
+def write_geoparquet_layers(
+    layers: _ArrowData | Sequence[tuple[str | None, _ArrowData]],
+    path: str | os.PathLike[str],
+    *,
+    profile: Literal["archive"] | None = None,
+    layer_column: str | None = None,
+    compression: Literal["snappy", "zstd", "uncompressed"] | None = None,
+    compression_level: int | None = None,
+    row_group_rows: int | None = None,
+    layer_row_groups: bool | None = None,
+    bbox_covering: Literal["struct", "columns", "none"] | None = None,
+    bbox_column: str | None = None,
+    order: Literal["input", "hilbert"] | None = None,
+    hilbert_column: str | None = None,
+    dictionary: Literal["all", "utf8", "none"] | None = None,
+    statistics: Literal["page", "chunk"] | None = None,
+    geometry_statistics: bool | None = None,
+    geometry_column: str | None = None,
+    crs: str | Mapping[str, Any] | None = None,
+    identity: Sequence[str] | Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]: ...
+def hecras_archive_layers(
+    path: str | os.PathLike[str],
+    *,
+    geometry: bool = True,
+    results: bool = True,
+    layers: Sequence[str] | None = None,
+    variables: Sequence[str] | None = None,
+    summary_geometry: bool = True,
+    ghost_cell_points: bool = True,
+    time_days: bool = True,
+    batch_rows: int = 65536,
+) -> dict[str, Any]: ...
+def write_hecras_archive(
+    path: str | os.PathLike[str],
+    out: str | os.PathLike[str],
+    *,
+    extra_layers: Sequence[tuple[str, _ArrowData]] | None = None,
+    extra_identity: Mapping[str, Sequence[str]] | None = None,
+    order: Sequence[str] | None = None,
+    crs: str | Mapping[str, Any] | None = None,
+    geometry: bool = True,
+    results: bool = True,
+    layers: Sequence[str] | None = None,
+    variables: Sequence[str] | None = None,
+    summary_geometry: bool = True,
+    ghost_cell_points: bool = True,
+    time_days: bool = True,
+    batch_rows: int = 65536,
+) -> dict[str, Any]: ...
 def write_vector(
     data: _VectorData,
     path: str,

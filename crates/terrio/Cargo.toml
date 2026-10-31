@@ -41,6 +41,7 @@ arrow-array = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 arrow-ipc = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
+arrow-select = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 quick-xml.workspace = true
 osmpbfreader = { workspace = true, optional = true }
@@ -52,6 +53,7 @@ lz4_flex = { workspace = true, optional = true }
 ruzstd.workspace = true
 netcdf-reader = { workspace = true, optional = true }
 hdf5-reader = { workspace = true, optional = true }
+ras-commander-fast-hdf = { workspace = true, optional = true }
 jpeg-decoder.workspace = true
 laz = { workspace = true, optional = true }
 e57 = { workspace = true, optional = true }
@@ -90,20 +92,36 @@ ndarray = { workspace = true, optional = true }
 # Disabled drivers stay in the API (`RasterDriver`, `VectorDriver`) and fail with "built without
 # the `...` feature".
 [features]
-default = ["cad", "geotiff", "parquet", "remote", "avif", "netcdf-hdf5", "osm", "lzma", "flatgeobuf", "jp2", "lerc", "pointcloud", "tiles", "zarr", "sqlite", "grib", "libzstd"]
+default = ["cad", "geotiff", "parquet", "remote", "avif", "netcdf-hdf5", "osm", "lzma", "flatgeobuf", "jp2", "lerc", "pointcloud", "tiles", "zarr", "sqlite", "grib", "libzstd", "hecras"]
 ## GeoTIFF and COG reading and writing. Always built (it is the core): the feature exists so that
 ## `features = ["geotiff"]` states what a build needs.
 geotiff = []
 ## DWG and ASCII/binary DXF reading and writing, through acadrust.
 cad = ["dep:acadrust"]
-## GeoParquet, the `arrow` module and Arrow streams of vector layers.
-parquet = ["dep:parquet", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc", "dep:arrow-buffer", "dep:bytes", "wbvector/geoparquet"]
+## GeoParquet (the `geoparquet` module of Arrow layers included), the `arrow` module and Arrow
+## streams of vector layers.
+parquet = [
+    "dep:parquet",
+    "parquet/zstd",
+    "dep:arrow-array",
+    "dep:arrow-schema",
+    "dep:arrow-ipc",
+    "dep:arrow-buffer",
+    "dep:arrow-select",
+    "dep:bytes",
+]
 ## HTTP(S), S3, GCS and Azure inputs, range reads of remote COGs and STAC (native builds only).
 remote = ["dep:ureq", "dep:hmac", "dep:sha2", "terrio-crs/grid-transport"]
 ## AVIF tiles of PMTiles and MBTiles archives.
 avif = ["tiles", "dep:rusty_av1d"]
 ## NetCDF, HDF5 and HDF-EOS reading, netCDF writing.
 netcdf-hdf5 = ["dep:netcdf-reader", "dep:hdf5-reader"]
+## HEC-RAS geometry (`.g##.hdf`) and plan (`.p##.hdf`) HDF files as vector layers (read only),
+## through the ras-commander-fast-hdf engine and its Arrow layers. With `parquet` too, the
+## direct HEC-RAS HDF to archive GeoParquet path (`hecras::archive`).
+## Needs `netcdf-hdf5`: HEC-RAS files stay readable as HDF5 rasters, and in-memory opens find
+## the root `File Type` with terrio's HDF5 reader.
+hecras = ["netcdf-hdf5", "dep:ras-commander-fast-hdf", "ras-commander-fast-hdf/arrow", "dep:arrow-array", "dep:arrow-schema"]
 ## OpenStreetMap PBF and XML.
 osm = ["dep:osmpbfreader", "wbvector/osmpbf"]
 ## LZMA-compressed GeoTIFFs.

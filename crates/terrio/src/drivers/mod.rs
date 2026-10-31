@@ -28,6 +28,8 @@ pub(crate) mod hdf5;
 pub(crate) mod hdf5_write;
 #[cfg(feature = "netcdf-hdf5")]
 pub(crate) mod hdfeos;
+#[cfg(feature = "hecras")]
+pub mod hecras;
 mod hfa;
 mod hgt;
 #[cfg(feature = "jp2")]

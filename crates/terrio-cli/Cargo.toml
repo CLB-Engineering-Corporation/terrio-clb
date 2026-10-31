@@ -17,6 +17,8 @@ default = []
 ## The optional GDAL backend: open anything GDAL can (`GDAL:` paths, `--driver gdal`), write
 ## rasters with GDAL's drivers (`-f NITF`). Needs GDAL installed.
 gdal = ["terrio/gdal"]
+## HEC-RAS geometry and plan HDF files (the HECRAS vector driver).
+hecras = ["terrio/hecras"]
 
 # The command line as a library (`terrio_cli::run`), which the Python package's `terrio` command
 # runs too.

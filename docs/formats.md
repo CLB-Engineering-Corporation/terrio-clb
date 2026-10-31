@@ -343,9 +343,15 @@ terrio convert 'STACTA:"https://example.com/pyramid/stacta.json":bands' preview.
 | TopoJSON | TopoJSON | ✓ | ✓ | topojson |
 | MapInfo File | MapInfo TAB and interchange format | ✓ | ✓ | tab, mif |
 | OSM | OpenStreetMap PBF and XML | ✓ | | osm.pbf, osm |
+| HECRAS | HEC-RAS geometry and plan HDF5 (the `hecras` feature) | ✓ | | g##.hdf, p##.hdf (by content) |
 | PMTiles | PMTiles v3 vector tiles (MVT) | ✓ | ✓ | pmtiles |
 | MBTiles | MBTiles vector tiles (MVT) | ✓ | ✓ | mbtiles |
 | MVT | Mapbox Vector Tiles: a tile, or a directory of tiles | ✓ | ✓ | mvt, pbf |
+
+HEC-RAS geometry and plan files (`HECRAS`, which GDAL does not have) are recognized by content,
+an HDF5 signature and the root `File Type` HEC-RAS writes, and give the mesh, 1D and 2D feature
+layers with the results HEC-RAS stored; `open_raster` still reads them as HDF5. See
+[HEC-RAS](hecras.md).
 
 Layer and field models follow GDAL's: GPX has GDAL's five layers, KML has the LIBKML driver's
 fields, OSM has the `points`, `lines`, `multilinestrings`, `multipolygons` and `other_relations`

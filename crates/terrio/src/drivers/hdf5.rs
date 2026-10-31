@@ -459,6 +459,15 @@ pub(crate) fn open_bytes(mut bytes: Vec<u8>, name: &str) -> Result<Hdf5File> {
     Hdf5File::from_vec(bytes).map_err(|e| err(Path::new(name), e))
 }
 
+/// The root group's `File Type` attribute of an HDF5 file held in memory, when it has one (HEC-RAS
+/// writes it). Reads only the file's metadata, from a temporary copy of the bytes.
+#[cfg(feature = "hecras")]
+pub(crate) fn root_file_type_in(bytes: &[u8]) -> Option<String> {
+    let f = Hdf5File::from_bytes(&bytes[signature_offset_in(bytes)?..]).ok()?;
+    let attributes = f.root_group().ok()?.attributes().ok()?;
+    attr_value(attributes.iter().find(|a| a.name == "File Type")?)
+}
+
 /// Reads an HDF5 dataset held in memory as a raster: see [`read`]. `name` is the file name.
 pub(crate) fn read_bytes(bytes: Vec<u8>, name: &str, subdataset: Option<&str>) -> Result<RasterDataset> {
     read_file(&open_bytes(bytes, name)?, Path::new(name), name, subdataset)

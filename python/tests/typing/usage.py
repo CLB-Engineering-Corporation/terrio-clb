@@ -172,6 +172,10 @@ def vectors(tmp: Path, raster: terrio.Raster) -> None:
     ds = terrio.open_vector(gpkg, layers=names)
     inside = terrio.open_vector(gpkg, bbox=(0.0, 0.0, 5.0, 5.0))
     print(len(inside[0]))
+    # Driver open options by their GDAL names (CSV, tile archives, HECRAS).
+    opened = terrio.open_vector(gpkg, options={"ZOOM_LEVEL": "0"})
+    summary: dict[str, Any] = terrio.info(gpkg, layers=names, options={"ZOOM_LEVEL": "0"})
+    print(len(opened), summary["driver"])
     print(ds.driver, ds.layer_names, len(ds), repr(ds))
     first: terrio.Layer = ds[0]
     by_name: terrio.Layer = ds["parcels"]

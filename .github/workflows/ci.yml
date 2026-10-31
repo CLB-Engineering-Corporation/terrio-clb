@@ -83,6 +83,10 @@ jobs:
       # The `ndarray` feature, off by default: its module and its tests.
       - run: cargo clippy -p terrio --features ndarray --lib --test ndarray -- -D warnings
       - run: cargo test -p terrio --features ndarray --test ndarray
+      # The HECRAS driver: its tests (synthetic HEC-RAS files) and those of the CLI and MCP that use
+      # it, named explicitly so they run when it is left out of the defaults.
+      - run: cargo clippy -p terrio -p terrio-cli --all-targets --features hecras -- -D warnings
+      - run: cargo test -p terrio -p terrio-cli --features hecras
 
   gdal:
     name: GDAL backend (feature build)
@@ -248,7 +252,7 @@ jobs:
           CC_wasm32_unknown_unknown: "false"
         run: >-
           cargo build -p terrio --target wasm32-unknown-unknown --no-default-features
-          --features geotiff,remote,avif,netcdf-hdf5,osm,lzma,flatgeobuf,jp2,lerc,pointcloud,tiles,zarr,sqlite,grib
+          --features geotiff,remote,avif,netcdf-hdf5,osm,lzma,flatgeobuf,jp2,lerc,pointcloud,tiles,zarr,sqlite,grib,hecras
       - name: A GeoTIFF build pulls none of the optional codecs
         run: |
           crates=$(cargo tree -p terrio -e normal --no-default-features --features geotiff --prefix none | cut -d' ' -f1 | sort -u)
@@ -350,3 +354,96 @@ jobs:
         run: |
           python scripts/compare_xarray_with_rioxarray.py terrio-data --output xarray.md
           cat xarray.md >> "$GITHUB_STEP_SUMMARY"
+
+  # HEC-RAS files compared with h5py (scripts/compare_hecras_with_h5py.py, the conformance
+  # script's `hecras` suite): the HEC-RAS 7.0.1 files of the published golden corpus,
+  # gpt-cmdr/ras-hdf-test-corpus. The `smoke` profile (about 24 MB compressed) is fetched at a
+  # pinned release tag, its archive is checked against the release's SHA256SUMS and every file
+  # against the release manifest, and it is cached by tag. No HEC example archives are
+  # downloaded. Set the repository variable TERRIO_SKIP_HECRAS_CORPUS to "true" to skip the job.
+  hecras-corpus:
+    name: HEC-RAS 7.0.1 corpus vs h5py
+    if: vars.TERRIO_SKIP_HECRAS_CORPUS != 'true'
+    runs-on: ubuntu-latest
+    env:
+      CORPUS_REPO: gpt-cmdr/ras-hdf-test-corpus
+      CORPUS_TAG: v1.0.1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install h5py numpy
+      - uses: actions/cache@v4
+        with:
+          path: .hecras-corpus
+          key: hecras-corpus-smoke-${{ env.CORPUS_TAG }}
+      - name: Fetch the HEC-RAS corpus (smoke) and verify its hashes
+        run: |
+          curl -fsSL -o fetch_corpus.py "https://raw.githubusercontent.com/$CORPUS_REPO/$CORPUS_TAG/scripts/fetch_corpus.py"
+          python fetch_corpus.py --repo "$CORPUS_REPO" --tag "$CORPUS_TAG" --profile smoke --dest .hecras-corpus
+      - name: Compare the corpus with h5py
+        run: |
+          set -o pipefail
+          python scripts/compare_hecras_with_h5py.py .hecras-corpus/fixtures --version 7.0.1 | tee hecras.txt
+          { echo '```'; cat hecras.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  conformance:
+    name: point clouds and conformance vs GDAL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: gdal
+          # As in the real-data job: the two share the cached environment.
+          create-args: gdal=3.12.2 libgdal-core=3.12.2 proj=9.8.1 libgdal-arrow-parquet libgdal-jp2openjpeg libgdal-netcdf libgdal-hdf5 libgdal-grib numpy pip pytest maturin pyproj pdal laspy lazrs-python pyarrow geopandas shapely
+          cache-environment: true
+      - name: Benchmark harness regression tests
+        shell: micromamba-shell {0}
+        run: python -m unittest discover -s scripts/tests -v
+      # Restores the real-data job's data; only that job saves it.
+      - uses: actions/cache/restore@v6
+        with:
+          path: terrio-data
+          key: terrio-data-gdal3.12.2-proj9.8.1-${{ hashFiles('scripts/fetch_test_data.sh', 'scripts/gen_epsg_points.py', 'scripts/proj_grids.txt') }}
+      - name: Fetch test data
+        shell: micromamba-shell {0}
+        run: scripts/fetch_test_data.sh terrio-data
+      - name: Build
+        run: cargo build --release
+      - name: Build and install the Python bindings
+        shell: micromamba-shell {0}
+        run: |
+          maturin build --release -m python/Cargo.toml -o python/dist
+          python -m pip install --no-deps python/dist/*.whl
+      - name: Install multidimensional reference packages
+        shell: micromamba-shell {0}
+        run: python -m pip install xarray h5netcdf h5py zarr
+      - name: Compare point clouds with laspy and PDAL
+        shell: micromamba-shell {0}
+        # Kept for the conformance report below, which reads it instead of comparing again. Pull
+        # requests compare the filters on autzen_trim.las only; pushes to main on the Madison
+        # lidar (4 million points) too, which takes about 20 minutes more.
+        run: |
+          set -o pipefail
+          python -u scripts/compare_pointclouds.py terrio-data ${{ github.event_name == 'pull_request' && '--quick' || '' }} | tee pointclouds.log
+      - name: Conformance suite (every comparison with GDAL, laspy and PDAL)
+        # Informational: differences are listed in the report, not failures. The step fails when
+        # a suite cannot run.
+        shell: micromamba-shell {0}
+        run: |
+          python -m pip install h5py
+          TERRIO_POINTCLOUDS_LOG=pointclouds.log python scripts/conformance.py terrio-data --output conformance.md --json conformance.json --jobs 4
+          cat conformance.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: conformance-report
+          path: |
+            conformance.md
+            conformance.json
