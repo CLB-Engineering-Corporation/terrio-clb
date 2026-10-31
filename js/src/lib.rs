@@ -67,6 +67,7 @@ const FEATURES: &[(&str, bool)] = &[
     ("cad", cfg!(feature = "cad")),
     ("flatgeobuf", cfg!(feature = "flatgeobuf")),
     ("grib", cfg!(feature = "grib")),
+    ("hecras", cfg!(feature = "hecras")),
     ("jp2", cfg!(feature = "jp2")),
     ("lerc", cfg!(feature = "lerc")),
     ("lzma", cfg!(feature = "lzma")),
@@ -320,6 +321,40 @@ pub fn open(bytes: Vec<u8>, filename: &str) -> Result<Dataset, JsError> {
         terrio::Dataset::Raster(r) => Dataset::from_raster(r),
         terrio::Dataset::Vector(v) => Dataset::from_layers(v.layers, v.driver),
     })
+}
+
+/// Options for [`open_vector`], as a JavaScript object.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+struct VectorOpenOptions {
+    /// Only these layers, by name.
+    layers: Option<Vec<String>>,
+    /// Driver open options by their GDAL names (`{ CELL_SUMMARIES: "Maximum Water Surface",
+    /// TIME_STEP: "12" }`), as `terrio convert --oo` takes them.
+    open_options: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+}
+
+/// Opens a vector dataset from its bytes, with driver open options. `filename` names the file
+/// (its extension tells the format when the content does not); `options` takes `layers` (names)
+/// and `openOptions`, the driver's open options by their GDAL names: the CSV options, the tile
+/// archive options and those of the HECRAS driver for HEC-RAS geometry and plan HDF files
+/// (`CELL_SUMMARIES`, `TIME_STEP`, ...).
+///
+/// A HEC-RAS file is read whole from memory: it must fit in the module's memory (4 GiB at most
+/// for wasm32) and opening briefly needs about twice its size. Layers the engine refuses are
+/// errors when named in `layers`, and left out with a warning otherwise.
+#[wasm_bindgen(js_name = openVector)]
+pub fn open_vector(bytes: Vec<u8>, filename: &str, options: JsValue) -> Result<Dataset, JsError> {
+    let o: VectorOpenOptions = parse_options(&options)?;
+    let mut open = terrio::VectorOpenOptions { layers: o.layers.unwrap_or_default(), ..Default::default() };
+    for (key, value) in o.open_options.unwrap_or_default() {
+        let value = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
+        if !open.set(&key, &value).map_err(js_err)? {
+            return Err(JsError::new(&format!("unknown open option '{key}'")));
+        }
+    }
+    let v = terrio::memory::open_vector_bytes(bytes, filename, &open).map_err(js_err)?;
+    Ok(Dataset::from_layers(v.layers, v.driver))
 }
 
 /// Opens a Zarr store (v2 or v3, GeoZarr conventions included) from its files: a `Map` or an

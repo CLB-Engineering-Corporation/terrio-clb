@@ -1529,6 +1529,29 @@ test("CAD DWG/DXF byte roundtrips preserve drawing coordinates, labels and holes
   source.free();
 });
 
+// ─── HEC-RAS geometry and plan HDF files (the HECRAS driver) ────────────────────────────────────
+
+test("HEC-RAS plans from memory as vector layers, with open options", { skip: needs("hecras") }, () => {
+  // The synthetic plan of crates/terrio/tests/data/hecras (scripts/make_hecras_fixture.py).
+  const plan = readFileSync(new URL("../../crates/terrio/tests/data/hecras/results_mesh_xs.h5", import.meta.url));
+  const ds = terrio.open(plan, "results_mesh_xs.h5");
+  assert.equal(ds.kind, "vector");
+  assert.deepEqual(ds.layerNames().slice(0, 3), ["mesh_cells", "mesh_cell_points", "mesh_faces"]);
+  // The stored projection text, with no EPSG code guessed.
+  assert.ok(ds.info().layers[0].crs.wkt.startsWith('PROJCS["Synthetic"'), JSON.stringify(ds.info().layers[0].crs));
+  const joined = terrio.openVector(plan, "results_mesh_xs.h5", {
+    layers: ["mesh_cells", "cross_sections"],
+    openOptions: { CELL_SERIES: "Water Surface", XS_RESULTS: "Water Surface", TIME_STEP: 1 },
+  });
+  assert.deepEqual(joined.layerNames(), ["mesh_cells", "cross_sections"]);
+  const cells = joined.toGeoJSON("mesh_cells");
+  assert.deepEqual(cells.features.map((f) => f.properties.water_surface), [12.75, 12.25]);
+  assert.deepEqual(cells.features.map((f) => f.properties.cell_id), [0, 1]);
+  // A value the file does not store is an error, never an empty layer.
+  assert.throws(() => terrio.openVector(plan, "x.hdf", { layers: ["mesh_cells"], openOptions: { CELL_SERIES: "Depth", TIME_STEP: 0 } }));
+  assert.throws(() => terrio.openVector(plan, "x.hdf", { openOptions: { NO_SUCH_OPTION: "1" } }));
+});
+
 test("coordinate operation safeguards and warnings", () => {
   terrio.takeWarnings();
   const [x, y] = terrio.transformPoints([110], [35], "EPSG:4610", "EPSG:4326");

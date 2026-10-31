@@ -195,6 +195,9 @@ mod dataset;
 mod drivers;
 mod error;
 pub mod formats;
+#[cfg(feature = "hecras")]
+#[cfg_attr(docsrs, doc(cfg(feature = "hecras")))]
+pub use drivers::hecras;
 #[cfg(feature = "gdal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "gdal")))]
 pub mod gdal_backend;
@@ -253,6 +256,7 @@ pub use dataset::{
 pub use drivers::gtiff_write::GeoTiffWriter;
 pub use drivers::vector::csv::{CsvGeometry, CsvOptions};
 pub use drivers::vector::geojson::GeoJsonOptions;
+pub use drivers::vector::hecras_options::HecRasOpenOptions;
 pub use error::{Error, Result};
 /// The `ndarray` crate, of the version terrio's array views of raster pixels use.
 #[cfg(feature = "ndarray")]

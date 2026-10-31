@@ -46,7 +46,11 @@ pub struct Args {
     overview: Option<usize>,
     /// An open option, as GDAL names it: `KEY=VALUE` (CSV: X_POSSIBLE_NAMES, Y_POSSIBLE_NAMES,
     /// GEOM_POSSIBLE_NAMES, AUTODETECT_TYPE, KEEP_GEOM_COLUMNS, SEPARATOR; PMTiles, MBTiles and MVT:
-    /// ZOOM_LEVEL, CLIP).
+    /// ZOOM_LEVEL, CLIP; HECRAS: MESHES, GEOMETRY_POLICY, CELL_SUMMARIES, FACE_SUMMARIES,
+    /// CELL_ATTRIBUTES, FACE_ATTRIBUTES, CELL_SERIES, FACE_SERIES, CELL_MAXIMUM, CELL_MINIMUM,
+    /// FACE_MAXIMUM, FACE_MINIMUM, TIME_STEP, XS_SUMMARIES, XS_RESULTS, XS_PROFILE, XS_GEOMETRY,
+    /// STRUCTURE_SERIES, BC_SERIES, REFERENCE_LINE_SERIES, REFERENCE_POINT_SERIES,
+    /// METADATA_MAX_BYTES, MAX_BYTES).
     #[arg(long = "oo", value_name = "KEY=VALUE")]
     open_options: Vec<String>,
     /// A vector layer creation option, as GDAL names it: `KEY=VALUE` (CSV: GEOMETRY=AS_WKT|AS_XY;
@@ -103,7 +107,7 @@ fn stream_options(a: &Args) -> terrio::Result<Option<terrio::stream::ConvertOpti
     let translate = a.vector.to_options(t_srs)?;
     let mut open = VectorOpenOptions { layers: a.layers.clone(), spatial_filter: a.vector.spatial_hint(&a.input), ..Default::default() };
     for (k, v) in key_values(&a.open_options)? {
-        if !open.csv.set(k, v)? && !open.tiles.set(k, v)? {
+        if !open.set(k, v)? {
             return Err(terrio::Error::InvalidArgument(format!("unknown open option '{k}'")));
         }
     }
@@ -213,7 +217,7 @@ pub fn run(mut a: Args) -> terrio::Result<()> {
         let spatial_filter = a.vector.spatial_hint(&a.input);
         let mut options = VectorOpenOptions { layers: a.layers.clone(), spatial_filter, ..Default::default() };
         for (k, v) in key_values(&a.open_options)? {
-            if !options.csv.set(k, v)? && !options.tiles.set(k, v)? {
+            if !options.set(k, v)? {
                 return Err(terrio::Error::InvalidArgument(format!("unknown open option '{k}'")));
             }
         }

@@ -56,6 +56,11 @@ pub fn open_bytes(bytes: Vec<u8>, name: &str) -> Result<Dataset> {
 
 /// Opens a raster from its bytes.
 pub fn open_raster_bytes(bytes: Vec<u8>, name: &str) -> Result<RasterDataset> {
+    // HEC-RAS files open as vector layers; a raster open reads their HDF5 arrays, as before.
+    #[cfg(feature = "hecras")]
+    if crate::drivers::hdf5::parse_subdataset(name).is_none() && crate::drivers::hecras::driver::is_hecras_bytes(&bytes) {
+        return crate::drivers::hdf5::read_bytes(bytes, name, None);
+    }
     match open_bytes(bytes, name)? {
         Dataset::Raster(r) => Ok(r),
         Dataset::Vector(_) => Err(Error::Unsupported(format!("'{name}' is a vector dataset, not a raster"))),
@@ -330,6 +335,15 @@ pub(crate) mod codec {
         #[cfg(feature = "netcdf-hdf5")]
         if bytes.starts_with(b"CDF") {
             return crate::drivers::netcdf::read_bytes(&bytes, name, None).map(Dataset::Raster);
+        }
+        // HEC-RAS geometry and plan files are HDF5 files that hold vector layers (the HECRAS
+        // driver): recognized by their root `File Type` before the HDF5 raster driver claims them.
+        #[cfg(feature = "hecras")]
+        if crate::drivers::hecras::driver::is_hecras_bytes(&bytes) {
+            let driver = VectorDriver::HECRAS;
+            let layers = crate::drivers::vector::read_bytes(bytes, name, driver, options)?.unwrap_or_default();
+            let layers: Vec<Layer> = layers.into_iter().map(|l| crate::dataset::fix_layer(l, name, driver)).collect();
+            return finish_vector(layers, driver, options);
         }
         #[cfg(feature = "netcdf-hdf5")]
         if crate::drivers::hdf5::signature_offset_in(&bytes).is_some() {

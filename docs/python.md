@@ -80,6 +80,20 @@ terrio.write_vector(layer, "world.gpkg", append=True)
 terrio.convert("more.shp", "world.gpkg", layer_name="countries", overwrite=True)
 ```
 
+Driver open options go in `options`, by their GDAL names, as `terrio convert --oo` takes them.
+HEC-RAS geometry and plan HDF files (the package is built with the `hecras` feature) read as
+vector layers this way, with the results HEC-RAS stored joined by open options
+(see [HEC-RAS](hecras.md)):
+
+```python
+plan = terrio.open_vector(
+    "BaldEagleDamBrk.p03.hdf",
+    layers=["mesh_cells", "cross_sections"],
+    options={"CELL_SUMMARIES": "Maximum Water Surface", "XS_RESULTS": "Water Surface", "TIME_STEP": "12"},
+)
+terrio.info("BaldEagleDamBrk.p03.hdf", layers=["mesh_cells"], options={"CELL_ATTRIBUTES": "MINIMUM_ELEVATION"})
+```
+
 The file is changed in place, as SQLite changes it: only the pages that change are written (new
 rows, R-tree nodes, the tables describing the layer), in a transaction protected by a rollback
 journal, so appending to a large GeoPackage costs about as much as the features appended, and a

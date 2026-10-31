@@ -1822,7 +1822,7 @@ checksum = "6a5b15d63a5ff39e378daed0e1340d3a5964703ea9712eb09a0dc66fade996f4"
 dependencies = [
  "libc",
  "ndarray",
- "num-complex 0.2.4",
+ "num-complex 0.4.6",
  "num-integer",
  "num-traits",
  "pyo3",
@@ -2257,6 +2257,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
 dependencies = [
  "rand_core",
+]
+
+[[package]]
+name = "ras-commander-fast-hdf"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bd6ba5132c53b68a36e9b206d6ddf0aa04e812bc59a3739244de28f66319671"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-schema",
+ "flate2",
+ "hdf5-reader",
+ "ndarray",
+ "rayon",
+ "robust",
 ]
 
 [[package]]
@@ -2837,6 +2853,7 @@ dependencies = [
  "parquet",
  "png 0.18.1",
  "quick-xml",
+ "ras-commander-fast-hdf",
  "rayon",
  "rstar 0.13.0",
  "rusty_av1d",

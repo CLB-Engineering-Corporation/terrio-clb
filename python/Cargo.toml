@@ -19,6 +19,9 @@ doctest = false
 ## The optional GDAL backend (`terrio/gdal`): `maturin build --features gdal`, with GDAL 3.4 or
 ## later installed where pkg-config (or GDAL_HOME) finds it.
 gdal = ["terrio/gdal", "terrio-cli/gdal"]
+## HEC-RAS geometry and plan HDF files (`terrio/hecras`), in the package by default.
+hecras = ["terrio/hecras", "terrio-cli/hecras"]
+default = ["hecras"]
 
 [dependencies]
 terrio.workspace = true

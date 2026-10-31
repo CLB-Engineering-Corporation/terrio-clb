@@ -22,6 +22,7 @@ pub(crate) mod gpkg_read;
 #[cfg(feature = "sqlite")]
 pub(crate) mod gpkg_update;
 pub mod gpx;
+pub mod hecras_options;
 pub mod kml;
 pub mod kml_style;
 pub mod mapinfo;
@@ -92,6 +93,8 @@ pub(crate) fn read(path: &str, driver: VectorDriver, options: &VectorOpenOptions
         VectorDriver::MapInfo => vec![mapinfo::read(path)?],
         #[cfg(feature = "osm")]
         VectorDriver::OSM => osm::read(path)?,
+        #[cfg(feature = "hecras")]
+        VectorDriver::HECRAS => crate::drivers::hecras::driver::read(path, options)?,
         _ => return Ok(None),
     }))
 }
@@ -155,6 +158,8 @@ pub(crate) fn read_bytes(bytes: Vec<u8>, name: &str, driver: VectorDriver, optio
         VectorDriver::OSM => osm::parse(bytes)?,
         #[cfg(feature = "sqlite")]
         VectorDriver::GPKG => gpkg_read::parse(bytes, &[])?,
+        #[cfg(feature = "hecras")]
+        VectorDriver::HECRAS => crate::drivers::hecras::driver::read_bytes(bytes, name, options)?,
         _ => return Ok(None),
     }))
 }

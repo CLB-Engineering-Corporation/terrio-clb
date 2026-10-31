@@ -7,6 +7,8 @@ mod cli;
 mod focal;
 mod geoparquet;
 mod grid;
+#[cfg(feature = "hecras")]
+mod hecras;
 mod manage;
 mod multidim;
 mod ops;
@@ -107,6 +109,8 @@ fn _terrio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     vsi::register(m)?;
     vector_dataset::register(m)?;
     geoparquet::register(m)?;
+    #[cfg(feature = "hecras")]
+    hecras::register(m)?;
     #[cfg(not(target_os = "emscripten"))]
     cli::register(m)?;
     Ok(())

@@ -46,6 +46,14 @@ pub struct PyArrowTable {
     table: ArrowTable,
 }
 
+impl PyArrowTable {
+    /// A table of record batches sharing `schema`.
+    #[cfg_attr(not(feature = "hecras"), allow(dead_code))]
+    pub(crate) fn new(schema: terrio::arrow::arrow_schema::SchemaRef, batches: Vec<RecordBatch>) -> Self {
+        Self { table: ArrowTable { schema, batches } }
+    }
+}
+
 #[pymethods]
 impl PyArrowTable {
     /// Exports the table as an Arrow C stream (the Arrow PyCapsule interface).

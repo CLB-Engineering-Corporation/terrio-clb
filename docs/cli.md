@@ -648,7 +648,7 @@ indexes and optional PRJ/CPG sidecars not produced by the new write.
 ## info
 
 ```sh
-terrio info INPUT [--json] [--stats] [--hist] [-l LAYER]...
+terrio info INPUT [--json] [--stats] [--hist] [-l LAYER]... [--oo KEY=VALUE]...
 ```
 
 Prints the driver, size, bands, data types, nodata, geotransform, CRS and extent of a raster, or
@@ -657,6 +657,10 @@ computes band minimum, maximum, mean and standard deviation over valid pixels. R
 summarized from their header alone, and their overviews are listed. The subdatasets of netCDF,
 HDF5 and GeoPackage files are listed as `gdalinfo` lists them (`SUBDATASET_N_NAME` and
 `SUBDATASET_N_DESC`).
+
+`--oo KEY=VALUE` opens a vector dataset with an open option, as `convert --oo` does: for
+example the HEC-RAS options that join stored results to a layer (`terrio info plan.p03.hdf -l
+mesh_cells --oo "CELL_SUMMARIES=Maximum Water Surface"`; see [HEC-RAS](hecras.md)).
 
 `--hist` computes each band's histogram as `gdalinfo -hist` does, and prints it as it does
 (`256 buckets from -0.5 to 255.5:` and the counts; a `histogram` object of `count`, `min`, `max`
@@ -706,7 +710,13 @@ even when an unrelated codec ignores them. Invalid `WEBP_LOSSLESS` values are
 rejected; accepted booleans are `YES/NO`, `TRUE/FALSE`, `ON/OFF`, and `1/0`.
 
 Tile archives (PMTiles, MBTiles, MVT) take `--oo ZOOM_LEVEL=N` and `--oo CLIP=NO` as inputs; see
-[Formats](formats.md#tile-archives).
+[Formats](formats.md#tile-archives). HEC-RAS geometry and plan files take the HECRAS options
+(`CELL_SUMMARIES`, `CELL_SERIES` with `TIME_STEP`, `XS_RESULTS`, ...; see [HEC-RAS](hecras.md)):
+
+```sh
+terrio convert BaldEagleDamBrk.p03.hdf cells.gpkg -l mesh_cells \
+  --oo "CELL_SUMMARIES=Maximum Water Surface" --oo "CELL_SERIES=Water Surface" --oo TIME_STEP=12
+```
 
 Point clouds (LAS, LAZ, COPC, EPT, PLY, E57) convert to LAS, LAZ, COPC, PLY, E57, an EPT
 dataset (an output named `ept.json`, `--ept-data-type laszip|binary|zstandard`) or a vector

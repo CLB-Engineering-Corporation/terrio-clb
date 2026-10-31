@@ -10,6 +10,32 @@
   messages) is in the release. netCDF-4 variables are now listed in creation order, as
   netCDF-C lists them (they were in link-storage order), and deflated one-element chunks
   that 0.9.1 refused ("DEFLATE stream did not finish") read, as h5py reads them.
+- HEC-RAS geometry (`.g##.hdf`) and plan (`.p##.hdf`) HDF files are read as
+  vector layers (the `HECRAS` driver, `hecras` feature), through the
+  [`ras-commander-fast-hdf`](https://crates.io/crates/ras-commander-fast-hdf)
+  engine: 2D mesh cells, cell centres, faces, face points and perimeters (with
+  the stored 2D flow area table); cross sections (with station-elevation,
+  Manning's n and ineffective areas as JSON fields), river lines, storage
+  areas, structures, boundary-condition lines, breaklines, refinement regions,
+  reference lines and points, junctions, pump stations, and pipe conduits and
+  nodes, each with its stored attribute columns. Stored results join through
+  open options (summary maxima and minima with their times, time-step values,
+  series extremes, cross-section, structure, boundary and reference results).
+  The CRS is the stored `Projection` WKT. A file is claimed only when its root
+  `File Type` is `HEC-RAS Geometry` or `HEC-RAS Results`; other HDF5 and
+  NetCDF files are not affected. Compared with h5py on the HEC-RAS 7.0.1 files
+  of a public corpus: every value identical. See `docs/hecras.md`.
+- The HECRAS driver reads its mesh and family layers through the engine's Arrow layer catalog
+  (`ras_commander_fast_hdf::arrow_layers`), which also names their fields: one source of
+  HEC-RAS layer rules and names for terrio and ras2cng. `mesh_cell_points` keeps a null
+  `is_ghost` for a mesh without a recorded cell count, a structure without a centerline is a
+  feature without geometry, a family attribute stored as NaN is null, and `MeshLayer::omitted` lists the cells left out of
+  `mesh_cells`. The typed engine API remains for joins, face points, quarantined cells and
+  HEC-RAS 5.0 layouts without a 2D flow area table.
+- `terrio::hecras::archive` (Python `terrio.hecras.archive_layers` and
+  `terrio.hecras.write_archive`): a HEC-RAS geometry or plan HDF file straight to an archive
+  GeoParquet file (ras2cng's layout), with the layers as Arrow tables so that a caller can add
+  its own; refused layers and variables are listed, not fatal. See `docs/hecras.md`.
 - GeoParquet from Arrow record batches (`terrio::geoparquet::write_arrow_layers`, Python
   `terrio.write_geoparquet_layers`), keeping the Arrow column types, with archive layout options:
   several layers in one file with a layer column and a union schema (identity columns

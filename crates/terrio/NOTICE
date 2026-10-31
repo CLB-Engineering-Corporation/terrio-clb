@@ -658,6 +658,21 @@ Copyright (c) 2009, Frank Warmerdam
 SPDX-License-Identifier: MIT. See the GDAL license text above.
 
 -------------------------------------------------------------------------------
+ras-commander-fast-hdf test fixtures
+-------------------------------------------------------------------------------
+
+crates/terrio/tests/data/hecras/coverage_mesh.h5, coverage_mesh_nogroups.h5 and
+coverage_mesh_nogeometry.h5 are copied unchanged from the tests of ras-commander-fast-hdf
+(https://github.com/gpt-cmdr/ras-commander-fast-hdf), and results_mesh_xs.h5 is derived from
+coverage_mesh.h5 by scripts/make_hecras_fixture.py. arrow_layers.h5 is copied unchanged from the
+same repository's tests/fixtures/arrow_layers/ (generator tests/generate_arrow_layers_fixture.py).
+They are synthetic files with no model data.
+
+  Copyright (c) 2024 CLB Engineering Corporation
+
+  Licensed under the MIT permission and warranty terms reproduced above for GDAL.
+
+-------------------------------------------------------------------------------
 DuckDB spatial (Hilbert curve encoding)
 -------------------------------------------------------------------------------
 

@@ -40,6 +40,8 @@ Suites:
     tiles             PMTiles, MBTiles and MVT read and written vs GDAL (compare_tiles_with_gdal.py)
     grib              GRIB1 and GRIB2 files band by band vs GDAL's GRIB driver (compare_grib_with_gdal.py)
     pointclouds       LAS, LAZ and COPC vs laspy and PDAL (compare_pointclouds.py)
+    hecras            HEC-RAS 7.0.1 geometry and plan HDF files vs an h5py reading
+                      (compare_hecras_with_h5py.py, on --hecras-data)
     crs               every EPSG CRS's transformations vs GDAL's (tests/epsg_accuracy.rs)
     crs-grids         the same with datum shift grids, then grids, geoid models and coordinate
                       epochs (tests/epsg_accuracy_grids.rs, compare_crs_grids_with_gdal.py)
@@ -47,7 +49,7 @@ Suites:
 Usage:
     python scripts/conformance.py ../terrio-data [--output docs/conformance.md] [--json FILE]
         [--only SUITE,...] [--skip SUITE,...] [--terrio target/release/terrio] [--jobs N]
-        [--remote] [--strict]
+        [--remote] [--strict] [--hecras-data DIR]
 
 Needs a release build of the command-line tool (``cargo build --release``), GDAL's command-line
 tools and Python bindings (``osgeo``) with NumPy; the point cloud suite needs the terrio Python
@@ -1671,6 +1673,41 @@ def suite_footprint(ctx):
     return suite
 
 
+def suite_hecras(ctx):
+    """HEC-RAS 7.0.1 geometry and plan HDF files against an independent h5py reading."""
+    s = Suite(
+        "hecras",
+        "HEC-RAS",
+        "h5py and NumPy, reading the datasets as ras-commander does (`scripts/hecras_oracle.py`)",
+        "The HEC-RAS 7.0.1 files of a corpus directory (`--hecras-data`, or `hecras/` in the test "
+        "data), a case per file: CRS text, units, mesh names, every cell polygon, face polyline and "
+        "perimeter ring, ghost counts, family features and their stored identities, and every "
+        "joined stored value (summaries with their time rows, static mesh arrays, time-step values "
+        "and series maxima, cross-section, structure, boundary-condition and reference results) "
+        "bit for bit. A refusal is accepted only where the test lists it. GDAL has no HEC-RAS "
+        "driver, so the reference is h5py, which ras-commander reads these files with.",
+    )
+    corpus = ctx.hecras_data or os.path.join(ctx.data, "hecras")
+    if not os.path.isdir(corpus):
+        s.skipped = f"no HEC-RAS corpus ({corpus}; set --hecras-data)"
+        return s
+    missing = missing_modules("h5py", "numpy")
+    if missing or not shutil.which("cargo"):
+        s.skipped = f"needs {', '.join(missing + ([] if shutil.which('cargo') else ['cargo']))}"
+        return s
+    code, out, err = run([sys.executable, str(SCRIPTS / "compare_hecras_with_h5py.py"), corpus])
+    if code not in (0, 1):
+        s.error = tail(err or out)
+    for line in out.splitlines():
+        m = re.match(r"^(OK|DIFF) (.+?)(?:: (.*))?$", line)
+        if m:
+            model = m[2].split("/")[0]
+            s.cases.append(Case(model, m[2], IDENTICAL if m[1] == "OK" else DIFFERS, m[3] or ""))
+    if not s.cases and not s.error:
+        s.error = tail(err or out)
+    return s
+
+
 def suite_topology(ctx):
     """Vector topology on real counties and roads against GDAL/GEOS."""
     s = Suite(
@@ -1901,6 +1938,9 @@ SUITES = OrderedDict(
         ("grib", suite_grib),
         ("pointclouds", suite_pointclouds),
         ("lazy-geotiff", suite_lazy_geotiff),
+
+
+        ("hecras", suite_hecras),
         ("crs", suite_crs),
         ("geocentric", suite_geocentric),
         ("perspective", suite_perspective),
@@ -2079,6 +2119,7 @@ def main():
     ap.add_argument("--remote", action="store_true", help="also compare windowed reads of public COGs over HTTP")
     ap.add_argument("--max-details", type=int, default=60, help="non-identical cases listed per suite (default 60)")
     ap.add_argument("--strict", action="store_true", help="exit non-zero when any case differs")
+    ap.add_argument("--hecras-data", help="the HEC-RAS corpus directory (default: hecras/ in the test data)")
     a = ap.parse_args()
 
     names = list(SUITES)
@@ -2094,7 +2135,9 @@ def main():
     if not os.path.exists(a.terrio):
         ap.error(f"{a.terrio} does not exist: run `cargo build --release` first, or pass --terrio")
 
-    ctx = argparse.Namespace(data=a.data, terrio=os.path.abspath(a.terrio), remote=a.remote, max_details=a.max_details)
+    ctx = argparse.Namespace(
+        data=a.data, terrio=os.path.abspath(a.terrio), remote=a.remote, max_details=a.max_details, hecras_data=a.hecras_data
+    )
     ctx.names = format_names(ctx.terrio)
     gdal_missing = missing_modules("osgeo", "numpy")
 

@@ -16,7 +16,9 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 /// The record batches of an Arrow object (or a GeoDataFrame, through `to_arrow()`).
-fn arrow_of(obj: &Bound<'_, PyAny>) -> PyResult<(terrio::arrow::arrow_schema::SchemaRef, Vec<terrio::arrow::arrow_array::RecordBatch>)> {
+pub(crate) fn arrow_of(
+    obj: &Bound<'_, PyAny>,
+) -> PyResult<(terrio::arrow::arrow_schema::SchemaRef, Vec<terrio::arrow::arrow_array::RecordBatch>)> {
     if let Some(x) = crate::arrow::read_capsules(obj)? {
         return Ok(x);
     }
@@ -26,6 +28,20 @@ fn arrow_of(obj: &Bound<'_, PyAny>) -> PyResult<(terrio::arrow::arrow_schema::Sc
         return Ok(x);
     }
     Err(invalid("expected an object with __arrow_c_stream__ or __arrow_c_array__ (a pyarrow Table, ...)"))
+}
+
+/// A `crs` argument as `geo` metadata: a PROJJSON dict, a PROJJSON or other CRS string, or `None`.
+pub(crate) fn crs_value(py: Python<'_>, crs: Option<&Bound<'_, PyAny>>) -> PyResult<Option<serde_json::Value>> {
+    let Some(c) = crs.filter(|c| !c.is_none()) else { return Ok(None) };
+    Ok(Some(if let Ok(s) = c.extract::<String>() {
+        match serde_json::from_str::<serde_json::Value>(&s) {
+            Ok(v @ serde_json::Value::Object(_)) => v,
+            _ => serde_json::Value::String(s),
+        }
+    } else {
+        let text: String = py.import("json")?.call_method1("dumps", (c,))?.extract()?;
+        serde_json::from_str(&text).map_err(|e| invalid(format!("crs: {e}")))?
+    }))
 }
 
 /// `None` (keep the base option), `""` (no column) or a name.
@@ -147,16 +163,8 @@ pub(crate) fn write_geoparquet_layers<'py>(
     if let Some(s) = geometry_column {
         options.geometry_column = s.to_string();
     }
-    if let Some(c) = crs.filter(|c| !c.is_none()) {
-        options.crs = Some(if let Ok(s) = c.extract::<String>() {
-            match serde_json::from_str::<serde_json::Value>(&s) {
-                Ok(v @ serde_json::Value::Object(_)) => v,
-                _ => serde_json::Value::String(s),
-            }
-        } else {
-            let text: String = py.import("json")?.call_method1("dumps", (c,))?.extract()?;
-            serde_json::from_str(&text).map_err(|e| invalid(format!("crs: {e}")))?
-        });
+    if let Some(c) = crs_value(py, crs)? {
+        options.crs = Some(c);
     }
 
     // The layers.
