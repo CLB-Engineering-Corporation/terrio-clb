@@ -177,9 +177,3 @@ laz = { opt-level = 3 }
 rusty_av1d = { opt-level = 3 }
 image-webp = { opt-level = 3 }
 lz4_flex = { opt-level = 3 }
-
-[patch.crates-io]
-# ras-commander-fast-hdf 0.3.0 is tagged (v0.3.0, commit 3a9e35e) but not yet on crates.io: build
-# against the tag until it is, then delete this section. Temporary: `cargo publish` needs the
-# crates.io release.
-ras-commander-fast-hdf = { git = "https://github.com/gpt-cmdr/ras-commander-fast-hdf", tag = "v0.3.0" }
