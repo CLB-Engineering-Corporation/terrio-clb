@@ -6690,10 +6690,6 @@ limitations under the License.
 
 Used by:
 
-- [hdf5-core 0.9.1](https://github.com/roteiro-gis/netcdf-rust)
-- [hdf5-reader 0.9.1](https://github.com/roteiro-gis/netcdf-rust)
-- [netcdf-core 0.9.1](https://github.com/roteiro-gis/netcdf-rust)
-- [netcdf-reader 0.9.1](https://github.com/roteiro-gis/netcdf-rust)
 - [allocator-api2 0.2.21](https://github.com/zakarumych/allocator-api2)
 - [android_system_properties 0.1.6](https://github.com/nical/android_system_properties)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
@@ -6706,6 +6702,8 @@ Used by:
 - [geo 0.33.1](https://github.com/georust/geo)
 - [geozero 0.15.1](https://github.com/georust/geozero)
 - [half 2.7.1](https://github.com/VoidStarKat/half-rs)
+- [hdf5-core 0.10.1](https://github.com/roteiro-gis/netcdf-rust)
+- [hdf5-reader 0.10.1](https://github.com/roteiro-gis/netcdf-rust)
 - [i_overlay 4.5.2](https://github.com/iShape-Rust/iOverlay)
 - [image-webp 0.2.4](https://github.com/image-rs/image-webp)
 - [itoa 1.0.18](https://github.com/dtolnay/itoa)
@@ -6729,6 +6727,8 @@ Used by:
 - [libc 0.2.191](https://github.com/rust-lang/libc)
 - [miniz_oxide 0.8.9](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide)
 - [miniz_oxide 0.9.1](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide)
+- [netcdf-core 0.10.1](https://github.com/roteiro-gis/netcdf-rust)
+- [netcdf-reader 0.10.1](https://github.com/roteiro-gis/netcdf-rust)
 - [paste 1.0.15](https://github.com/dtolnay/paste)
 - [pin-project-lite 0.2.17](https://github.com/taiki-e/pin-project-lite)
 - [portable-atomic-util 0.2.8](https://github.com/taiki-e/portable-atomic-util)
