@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "terrio"
-dynamic = ["version"]
+version = "0.5.0.1"
 description = "Pure-Rust geospatial raster and vector data I/O, without GDAL"
 readme = "README.md"
 license = "MIT"

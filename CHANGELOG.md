@@ -1,5 +1,20 @@
 # Changelog
 
+## CLB build 0.5.0.1 (terrio-clb, 2026-10-31)
+
+Built from opengeos/terrio 0.5.0 plus the fork's later `main` and the entries under
+*Unreleased* below as of tag `gpt-cmdr-v0.5.0.1`: the HEC-RAS driver on ras-commander-fast-hdf
+0.3.0's Arrow layer catalog with direct HDF to archive GeoParquet, GeoParquet from Arrow layers
+with the archive layout options, hdf5-reader/netcdf-reader 0.10.1 from crates.io, the COG
+area-matched report in the default metadata domain, and the Windows tile-index path fix.
+Wheel version `0.5.0.1`, crate version `0.5.0+gpt-cmdr.1`. Published only as GitHub Release
+assets on CLB-Engineering-Corporation/terrio-clb, never to PyPI, crates.io or npm, whose
+`terrio` names belong to opengeos/terrio:
+
+```
+pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.1
+```
+
 ## Unreleased
 
 ### Formats
