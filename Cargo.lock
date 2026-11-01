@@ -2811,7 +2811,7 @@ dependencies = [
 
 [[package]]
 name = "terrio"
-version = "0.5.0"
+version = "0.5.0+gpt-cmdr.1"
 dependencies = [
  "acadrust",
  "arrow-array",
@@ -2881,7 +2881,7 @@ dependencies = [
 
 [[package]]
 name = "terrio-cli"
-version = "0.5.0"
+version = "0.5.0+gpt-cmdr.1"
 dependencies = [
  "clap",
  "gag",
@@ -2908,7 +2908,7 @@ dependencies = [
 
 [[package]]
 name = "terrio-js"
-version = "0.5.0"
+version = "0.5.0+gpt-cmdr.1"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.4.3",
@@ -2925,7 +2925,7 @@ dependencies = [
 
 [[package]]
 name = "terrio-py"
-version = "0.5.0"
+version = "0.5.0+gpt-cmdr.1"
 dependencies = [
  "arrow-array",
  "numpy",
