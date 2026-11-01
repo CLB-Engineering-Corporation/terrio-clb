@@ -468,6 +468,20 @@ impl PyRaster {
     ///     mask: A per-dataset validity mask, a 2-D uint8 array (0 for invalid pixels), written
     ///         as GDAL's internal GeoTIFF mask.
     ///     rpc: The 92 rational polynomial coefficients of the GeoTIFF `RPCCoefficientTag`.
+    ///     report_metadata: With area-matched overviews, also store the report (see Returns) in
+    ///         the default metadata domain (rasterio's `tags()`), written into the header with
+    ///         the overviews: a mapping of `"area_ratios"` and/or `"base_valid_pixels"` to the
+    ///         item names, such as `{"area_ratios": "overview_area_ratios",
+    ///         "base_valid_pixels": "overview_base_valid_pixels"}`. The ratios are formatted as
+    ///         `"%.6f"` and comma-separated, the counts as integers; with several bands, the
+    ///         bands' values are separated by `;`. A name also given in `metadata` raises (one of
+    ///         the source raster's own items is replaced). Nothing is stored when no level is
+    ///         built (the write then returns `None`).
+    ///     area_matched_nan_valid: With area-matched overviews, count NaN under a numeric nodata
+    ///         as valid, as rasterio's mask does, instead of as nodata: NaN pixels add to the
+    ///         coverage, and the mean of a kept cell holding one is NaN (a mode is never NaN).
+    ///         No effect on integer rasters or under a NaN nodata. LERC stores NaN pixels as
+    ///         masked, reading back as NaN without their sign or payload.
     ///
     /// COG creation options are GDAL's COG driver's: one the writer would not act on (a
     /// GeoTIFF-only option, or an overview compression unlike the image's) raises rather than
@@ -479,7 +493,9 @@ impl PyRaster {
     ///     `method` (`"area_matched"` or `"area_matched_mode"`), `factors` (`[2, 4, ...]`),
     ///     `area_ratios` (per band, per level: the kept cells times `factor**2` over the band's
     ///     valid full-resolution pixels; 1.0 keeps the valid area exactly) and
-    ///     `base_valid_pixels` (per band). The file's metadata carries the same values in the
+    ///     `base_valid_pixels` (per band), and `nan_pixels` (per band: NaN samples under a
+    ///     numeric nodata, counted whether or not `area_matched_nan_valid` makes them valid;
+    ///     not stored in the file). The file's metadata carries the other values in the
     ///     `OVERVIEW_REPORT` domain (`OVERVIEW_METHOD`, `OVERVIEW_FACTORS`,
     ///     `OVERVIEW_AREA_RATIOS`, `OVERVIEW_BASE_VALID_PIXELS`; rasterio:
     ///     `tags(ns="OVERVIEW_REPORT")`), with the bands' values separated by `;`.
@@ -490,7 +506,7 @@ impl PyRaster {
     #[pyo3(signature = (
         path, driver=None, compress=None, tile_size=None, bigtiff=false, options=None, *,
         band_metadata=None, colormap=None, overviews=None, overview_resampling=None, gcps=None,
-        mask=None, rpc=None, metadata=None
+        mask=None, rpc=None, metadata=None, report_metadata=None, area_matched_nan_valid=false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn write<'py>(
@@ -510,6 +526,8 @@ impl PyRaster {
         mask: Option<numpy::PyReadonlyArray2<'_, u8>>,
         rpc: Option<Vec<f64>>,
         metadata: Option<&Bound<'_, PyAny>>,
+        report_metadata: Option<std::collections::BTreeMap<String, String>>,
+        area_matched_nan_valid: bool,
     ) -> PyResult<Option<Bound<'py, PyDict>>> {
         let mut options_ = write_options(driver, compress, tile_size, bigtiff)?;
         options_.gcps = parse_gcps(gcps);
@@ -538,6 +556,20 @@ impl PyRaster {
         }
         options_.overview_resampling = overview_resampling;
         options_.metadata = metadata.map(string_pairs).transpose()?.unwrap_or_default();
+        options_.area_matched_nan_valid = area_matched_nan_valid;
+        if let Some(names) = report_metadata {
+            let mut m = terrio::OverviewReportMetadata::default();
+            for (key, name) in names {
+                match key.as_str() {
+                    "area_ratios" => m.area_ratios = Some(name),
+                    "base_valid_pixels" => m.base_valid_pixels = Some(name),
+                    other => {
+                        return Err(invalid(format!("unknown report_metadata key '{other}' (area_ratios, base_valid_pixels)")));
+                    }
+                }
+            }
+            options_.overview_report_metadata = Some(m);
+        }
         let options = options_;
         // A raster read by window is written as a tile archive a tile row at a time.
         let driver = options.driver.or_else(|| terrio::formats::RasterDriver::for_extension(path));
@@ -554,6 +586,7 @@ impl PyRaster {
                 d.set_item("factors", r.factors)?;
                 d.set_item("area_ratios", r.area_ratios)?;
                 d.set_item("base_valid_pixels", r.base_valid_pixels)?;
+                d.set_item("nan_pixels", r.nan_pixels)?;
                 Ok(d)
             })
             .transpose()

@@ -249,9 +249,10 @@ pub mod warnings;
 pub use cog::{LazyRaster, TiffReadLimits, Window, WindowOptions, open_raster_lazy};
 pub use cog_validate::{CogValidation, validate_cog};
 pub use dataset::{
-    BandMetadata, Dataset, Gcp, Geolocation, OVERVIEW_REPORT_DOMAIN, OverviewReport, RasterDataset, RasterWriteOptions, VectorDataset,
-    VectorOpenOptions, VectorWriteOptions, geo_transform, is_north_up, list_layers, open, open_raster, open_raster_with_tiff_limits,
-    open_vector, read_gcps, write_netcdf_groups, write_raster, write_raster_dataset, write_raster_dataset_with_report, write_vector,
+    BandMetadata, Dataset, Gcp, Geolocation, OVERVIEW_REPORT_DOMAIN, OverviewReport, OverviewReportMetadata, RasterDataset,
+    RasterWriteOptions, VectorDataset, VectorOpenOptions, VectorWriteOptions, format_fixed6, geo_transform, is_north_up, list_layers, open,
+    open_raster, open_raster_with_tiff_limits, open_vector, read_gcps, write_netcdf_groups, write_raster, write_raster_dataset,
+    write_raster_dataset_with_report, write_vector,
 };
 pub use drivers::gtiff_write::GeoTiffWriter;
 pub use drivers::vector::csv::{CsvGeometry, CsvOptions};

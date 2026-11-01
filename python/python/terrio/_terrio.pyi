@@ -256,6 +256,8 @@ class Raster:
         mask: NDArray[Any] | None = None,
         rpc: Sequence[float] | None = None,
         metadata: Mapping[str, Any] | Sequence[tuple[Any, Any]] | None = None,
+        report_metadata: Mapping[str, str] | None = None,
+        area_matched_nan_valid: bool = False,
     ) -> dict[str, Any] | None: ...
     def to_bytes(
         self,

@@ -27,6 +27,9 @@ pub(crate) struct AreaMatchedBand<T> {
     pub(crate) area_ratios: Vec<f64>,
     /// The valid full-resolution pixels.
     pub(crate) base_valid: u64,
+    /// The full-resolution NaN samples under a numeric nodata, counted whether or not `nan_valid`
+    /// makes them valid (0 under a NaN nodata and on integer bands).
+    pub(crate) nan_pixels: u64,
 }
 
 /// One level's accumulators: per cell, the sum and count of valid full-resolution pixels, and the
@@ -40,10 +43,11 @@ struct Accumulators {
     mode_valid: Vec<bool>,
 }
 
-/// Whether a sample is valid: neither nodata nor NaN.
+/// Whether a sample is valid: not nodata, and not NaN unless `nan_valid` and the nodata value is
+/// not NaN itself (rasterio's mask, which ras2cng reads: a numeric nodata leaves NaN valid).
 #[inline]
-fn valid(v: f64, nodata: f64) -> bool {
-    !v.is_nan() && v != nodata
+fn valid(v: f64, nodata: f64, nan_valid: bool) -> bool {
+    if v.is_nan() { nan_valid && !nodata.is_nan() } else { v != nodata }
 }
 
 /// The mode of the valid values of a 2x2 block (in row order: top left, top right, bottom left,
@@ -64,7 +68,8 @@ fn block_mode(values: [f64; 4], valid: [bool; 4]) -> (f64, bool) {
 
 impl Accumulators {
     /// Level 1, from a band of `cols` x `rows` samples.
-    fn first<T: Pixel>(band: &[T], cols: usize, rows: usize, nodata: f64, categorical: bool) -> (Self, u64) {
+    /// Returns the accumulators, the valid pixels and the NaN samples under a numeric nodata.
+    fn first<T: Pixel>(band: &[T], cols: usize, rows: usize, nodata: f64, nan_valid: bool, categorical: bool) -> (Self, u64, u64) {
         let (oc, or) = (cols.div_ceil(2), rows.div_ceil(2));
         let n = oc * or;
         let mut acc = Self {
@@ -76,6 +81,8 @@ impl Accumulators {
             mode_valid: if categorical { vec![false; n] } else { Vec::new() },
         };
         let mut base_valid = 0u64;
+        let mut nan_pixels = 0u64;
+        let numeric_nodata = !nodata.is_nan();
         for oy in 0..or {
             for ox in 0..oc {
                 let mut values = [0.0f64; 4];
@@ -84,7 +91,10 @@ impl Accumulators {
                     let (y, x) = (2 * oy + dy, 2 * ox + dx);
                     if y < rows && x < cols {
                         let v = band[y * cols + x].to_f64();
-                        if valid(v, nodata) {
+                        if numeric_nodata && v.is_nan() {
+                            nan_pixels += 1;
+                        }
+                        if valid(v, nodata, nan_valid) {
                             values[k] = v;
                             ok[k] = true;
                         }
@@ -99,7 +109,7 @@ impl Accumulators {
                 }
             }
         }
-        (acc, base_valid)
+        (acc, base_valid, nan_pixels)
     }
 
     /// The next (half-size) level.
@@ -232,21 +242,28 @@ fn select(weights: &[u64], cols: usize, rows: usize, factor: u64, base_valid: u6
 
 /// The area-matched levels of one band of `cols` x `rows` samples: `count` levels of factors 2,
 /// 4, 8... `integral` rounds the means of integer types half to even, as NumPy's `rint`.
+/// `nan_valid` counts NaN samples as valid under a numeric nodata, as rasterio's mask does: they
+/// add to the coverage, and the mean of a cell holding one is NaN (NumPy's sum propagates it).
+/// They never make a mode: NaN equals no value, so a block of NaNs only has no mode.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn area_matched_band<T: Pixel>(
     band: &[T],
     cols: usize,
     rows: usize,
     nodata: f64,
+    nan_valid: bool,
     count: usize,
     categorical: bool,
     integral: bool,
 ) -> AreaMatchedBand<T> {
-    let mut out = AreaMatchedBand { levels: Vec::with_capacity(count), area_ratios: Vec::with_capacity(count), base_valid: 0 };
+    let mut out =
+        AreaMatchedBand { levels: Vec::with_capacity(count), area_ratios: Vec::with_capacity(count), base_valid: 0, nan_pixels: 0 };
     if count == 0 {
         return out;
     }
-    let (mut acc, base_valid) = Accumulators::first(band, cols, rows, nodata, categorical);
+    let (mut acc, base_valid, nan_pixels) = Accumulators::first(band, cols, rows, nodata, nan_valid, categorical);
     out.base_valid = base_valid;
+    out.nan_pixels = nan_pixels;
     for k in 0..count {
         if k > 0 {
             acc = acc.reduce(categorical);
@@ -300,7 +317,7 @@ mod tests {
         let nd = -9999.0f32;
         let band: Vec<f32> =
             (0..rows).flat_map(|y| (0..cols).map(move |x| if (x as i32 - y as i32).abs() <= 2 { (x + y) as f32 } else { nd })).collect();
-        let out = area_matched_band(&band, cols, rows, nd as f64, 3, false, false);
+        let out = area_matched_band(&band, cols, rows, nd as f64, false, 3, false, false);
         assert_eq!(out.levels.len(), 3);
         assert_eq!(out.levels[0].len(), 32 * 24);
         assert_eq!(out.levels[2].len(), 8 * 6);
@@ -313,7 +330,7 @@ mod tests {
             assert!((out.area_ratios[k] - (kept * f * f) as f64 / valid as f64).abs() < 1e-12);
         }
         // Deterministic.
-        let again = area_matched_band(&band, cols, rows, nd as f64, 3, false, false);
+        let again = area_matched_band(&band, cols, rows, nd as f64, false, 3, false, false);
         assert_eq!(out.levels, again.levels);
     }
 
@@ -321,24 +338,73 @@ mod tests {
     fn means_of_kept_cells_and_integer_rounding() {
         // One 2x2 block of 1, 2, 2, 2 (mean 1.75) beside an empty block.
         let band: Vec<i16> = vec![1, 2, 0, 0, 2, 2, 0, 0];
-        let out = area_matched_band(&band, 4, 2, 0.0, 1, false, true);
+        let out = area_matched_band(&band, 4, 2, 0.0, false, 1, false, true);
         assert_eq!(out.levels[0], vec![2, 0]);
         // Half-way means round to even.
         let band: Vec<i16> = vec![1, 2, 3, 4, 3, 2, 5, 6];
-        let out = area_matched_band(&band, 4, 2, -1.0, 1, false, true);
+        let out = area_matched_band(&band, 4, 2, -1.0, false, 1, false, true);
         assert_eq!(out.levels[0], vec![2, 4]);
-        let out = area_matched_band(&band, 4, 2, -1.0, 1, true, true);
+        let out = area_matched_band(&band, 4, 2, -1.0, false, 1, true, true);
         assert_eq!(out.levels[0], vec![2, 3]);
+    }
+
+    #[test]
+    fn nan_under_a_numeric_nodata_is_valid_when_asked() {
+        let nd = -9999.0f32;
+        // A 4x2 band: the left block holds a NaN, the right block one valid pixel.
+        let band = vec![2.0f32, 1.0, nd, nd, f32::NAN, 3.0, 5.0, nd];
+        let out = area_matched_band(&band, 4, 2, nd as f64, true, 1, false, false);
+        // Five valid pixels (the NaN counts): round(5 / 4) = 1 cell, the fuller one, whose mean is NaN.
+        assert_eq!(out.base_valid, 5);
+        assert_eq!(out.nan_pixels, 1);
+        assert!(out.levels[0][0].is_nan());
+        assert_eq!(out.levels[0][1], nd);
+        assert_eq!(out.area_ratios, vec![4.0 / 5.0]);
+        // By default the NaN is invalid: three valid pixels on the left, mean 2.
+        let out = area_matched_band(&band, 4, 2, nd as f64, false, 1, false, false);
+        assert_eq!(out.base_valid, 4);
+        // Counted the same way when NaN is not valid.
+        assert_eq!(out.nan_pixels, 1);
+        assert_eq!(out.levels[0], vec![2.0, nd]);
+        // The NaN reaches every coarser level holding the cell.
+        let big: Vec<f32> = (0..64).map(|i| if i == 9 { f32::NAN } else { 1.0 }).collect();
+        let out = area_matched_band(&big, 8, 8, nd as f64, true, 3, false, false);
+        assert_eq!(out.base_valid, 64);
+        assert!(out.levels[0][0].is_nan() && out.levels[0].iter().filter(|v| v.is_nan()).count() == 1);
+        assert!(out.levels[1][0].is_nan() && out.levels[2][0].is_nan());
+        // A NaN nodata keeps NaN invalid.
+        let out = area_matched_band(&[f32::NAN, 1.0, f32::NAN, f32::NAN], 2, 2, f64::NAN, true, 1, false, false);
+        assert_eq!(out.base_valid, 1);
+        // NaN under a NaN nodata is nodata, not counted.
+        assert_eq!(out.nan_pixels, 0);
+        // Integer bands have no NaN: unchanged.
+        let ints: Vec<i16> = vec![1, 2, 0, 0, 2, 2, 0, 0];
+        assert_eq!(
+            area_matched_band(&ints, 4, 2, 0.0, true, 1, false, true).levels,
+            area_matched_band(&ints, 4, 2, 0.0, false, 1, false, true).levels
+        );
+    }
+
+    #[test]
+    fn valid_nans_cover_but_never_make_a_mode() {
+        let nd = -9999.0f32;
+        // Left block: all NaN (covered, no mode). Right block: 1, NaN, 1, nodata (mode 1).
+        let band = vec![f32::NAN, f32::NAN, 1.0, f32::NAN, f32::NAN, f32::NAN, 1.0, nd];
+        let out = area_matched_band(&band, 4, 2, nd as f64, true, 1, true, false);
+        assert_eq!(out.base_valid, 7);
+        // round(7 / 4) = 2 cells kept; the left one has no mode, so it stays nodata.
+        assert_eq!(out.levels[0], vec![nd, 1.0]);
+        assert_eq!(out.area_ratios, vec![8.0 / 7.0]);
     }
 
     #[test]
     fn nan_is_never_valid() {
         let band = vec![f32::NAN, 1.0, f32::NAN, f32::NAN];
-        let out = area_matched_band(&band, 2, 2, f64::NAN, 1, false, false);
+        let out = area_matched_band(&band, 2, 2, f64::NAN, false, 1, false, false);
         // One valid pixel of four: round(1 / 4) = 0 cells kept.
         assert!(out.levels[0][0].is_nan());
         let band = vec![2.0f32, 1.0, f32::NAN, 3.0];
-        let out = area_matched_band(&band, 2, 2, -9999.0, 1, false, false);
+        let out = area_matched_band(&band, 2, 2, -9999.0, false, 1, false, false);
         assert_eq!(out.levels[0], vec![2.0]);
     }
 }

@@ -648,7 +648,7 @@ pub(crate) fn fix_layer(mut layer: Layer, path: &str, driver: VectorDriver) -> L
     layer
 }
 
-pub use crate::drivers::gtiff_write::{OVERVIEW_REPORT_DOMAIN, OverviewReport};
+pub use crate::drivers::gtiff_write::{OVERVIEW_REPORT_DOMAIN, OverviewReport, OverviewReportMetadata, format_fixed6};
 
 /// Options for writing rasters.
 #[derive(Debug, Clone, Default)]
@@ -691,6 +691,26 @@ pub struct RasterWriteOptions {
     /// (or the mode) of their valid pixels. It needs a nodata value. The algorithm is ras2cng's
     /// `build_area_matched_overviews`, with the same output.
     pub overview_resampling: Option<String>,
+    /// Area-matched overviews count NaN samples under a numeric nodata as valid, as rasterio's
+    /// mask (and so ras2cng's NumPy builder) does, instead of as nodata: a NaN adds to the
+    /// coverage of its cells, and the mean of a kept cell holding one is NaN at every level
+    /// (`area_matched_mode`: NaN equals no value, so it never becomes a mode). Without effect on
+    /// integer rasters and under a NaN nodata; refused without area-matched overviews.
+    ///
+    /// LERC (`LERC`, `LERC_DEFLATE`, `LERC_ZSTD`) stores the NaN pixels of a float block, as
+    /// GDAL does, as masked pixels, which read back as NaN: the value is kept, its sign and
+    /// payload are not (lossless compressions keep the bits). This is already the case of the
+    /// full-resolution image; the option only lets NaN reach the overviews.
+    pub area_matched_nan_valid: bool,
+    /// Also store the [`OverviewReport`] of area-matched overviews in the default metadata domain
+    /// (rasterio's `tags()`), under these item names: the area ratios as Python's `"%.6f"`,
+    /// comma-separated, and the valid pixel count; with several bands, the bands' values are
+    /// separated by `;`. Written into the file's header with the overviews, so that the report
+    /// needs no pass of its own over the raster. Names of [`Self::metadata`] items are refused
+    /// (an item of the raster's own metadata is replaced), as is the option without
+    /// area-matched overviews. Nothing is stored when no level is built (a raster within one
+    /// tile, `OVERVIEWS=NONE`): the write then returns no report either.
+    pub overview_report_metadata: Option<OverviewReportMetadata>,
     /// COG (or GeoTIFF) overviews supplied by the caller, written as they are instead of being
     /// computed: from the largest, the overviews of factors 2, 4, 8... Each has the raster's bands
     /// and data type and the size the writer gives that level, `ceil(cols / f) x ceil(rows / f)`
@@ -884,6 +904,12 @@ fn write_raster_with_nodata(
             opts.complex = complex;
             return crate::drivers::gtiff_write::write(raster, path, &opts);
         }
+    }
+    if options.area_matched_nan_valid || options.overview_report_metadata.is_some() {
+        return Err(Error::Unsupported(format!(
+            "area_matched_nan_valid and overview_report_metadata are written by terrio's GeoTIFF/COG writer only, not to {}",
+            driver.name()
+        )));
     }
     // Complex samples: GeoTIFFs written above, and GDAL's HFA driver below.
     if complex && !(cfg!(feature = "gdal") && driver == RasterDriver::HFA) {

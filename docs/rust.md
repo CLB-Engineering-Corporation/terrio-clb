@@ -99,6 +99,42 @@ carries the same values in the `OVERVIEW_REPORT` metadata domain (`OVERVIEW_METH
 `OVERVIEW_FACTORS`, `OVERVIEW_AREA_RATIOS`, `OVERVIEW_BASE_VALID_PIXELS`), which GDAL and rasterio
 read (`tags(ns="OVERVIEW_REPORT")`); Python's `Raster.write` returns the report as a dict.
 
+`RasterWriteOptions::overview_report_metadata` also stores the report in the default domain
+(rasterio's `tags()`), under item names of the caller's choosing, in the header written with the
+overviews, so that a reader of that domain needs no pass of its own over the raster: the area
+ratios as Python's `"%.6f"` (`terrio::format_fixed6`: correctly rounded from the binary value,
+ties to even), comma-separated, and the valid pixel count; with several bands, the bands' values
+are separated by `;`. A name also given in `metadata` is refused. Nothing is stored when no
+level is built.
+
+```rust,no_run
+let ds = terrio::open_raster("depth.tif")?;
+let options = terrio::RasterWriteOptions {
+    driver: Some(terrio::formats::RasterDriver::Cog),
+    overview_resampling: Some("area_matched".into()),
+    overview_report_metadata: Some(terrio::OverviewReportMetadata {
+        area_ratios: Some("overview_area_ratios".into()),
+        base_valid_pixels: Some("overview_base_valid_pixels".into()),
+    }),
+    area_matched_nan_valid: true,
+    ..Default::default()
+};
+terrio::write_raster_dataset(&ds, "depth_cog.tif", &options)?;
+# Ok::<(), terrio::Error>(())
+```
+
+Area-matched overviews count NaN as nodata. `area_matched_nan_valid` counts NaN under a numeric
+nodata (a HEC-RAS float32 grid with -9999) as valid instead, as rasterio's mask does: NaN pixels
+add to the coverage, and the mean of a kept cell holding one is NaN at every level, as ras2cng's
+NumPy builder computes it (a mode is never NaN). Under a NaN nodata it changes nothing. LERC
+stores NaN pixels as masked, as GDAL does, and they read back as NaN without their sign or
+payload; lossless codecs keep the bits.
+
+Either way the report's `nan_pixels` counts, per band, the NaN samples under a numeric nodata,
+from the same pass (it is not stored in the file). A caller that must treat NaN as rasterio's mask
+does, but writes without `area_matched_nan_valid`, can refuse the result on a non-zero count
+instead of scanning the raster first.
+
 Overviews computed elsewhere are written as they are with `RasterWriteOptions::overview_data`
 (GDAL's `OVERVIEWS=FORCE_USE_EXISTING`): the levels of factors 2, 4, 8…, each of the raster's
 bands and data type and `ceil(cols / f) x ceil(rows / f)` pixels.

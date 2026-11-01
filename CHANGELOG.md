@@ -61,6 +61,24 @@
   flood-depth COG, LERC with `MAX_Z_ERROR=0.01` shrinks by 3.5% (NaN nodata)
   to 13% (-9999 nodata). Integer and pixel-interleaved LERC tiles, and the
   other codecs, keep GDAL's zeros. Pixels inside the raster are unchanged.
+- GeoTIFF and COG area-matched overviews: `overview_report_metadata`
+  (Python `report_metadata={"area_ratios": ..., "base_valid_pixels": ...}`)
+  also stores the overview report in the default metadata domain under the
+  caller's item names, written into the header with the overviews: the area
+  ratios as Python's `"%.6f"` (correctly rounded, ties to even),
+  comma-separated, bands separated by `;`. A reader of the default domain
+  (ras2cng's `overview_area_ratios`, `overview_base_valid_pixels`) no longer
+  needs a pass of its own over the raster. Names of the caller's `metadata`
+  items are refused.
+- `area_matched_nan_valid` counts NaN under a numeric nodata as valid in
+  area-matched overviews, as rasterio's mask (and ras2cng's NumPy builder)
+  does: NaN adds to the coverage and the mean of a kept cell holding one is
+  NaN, bit for bit as NumPy computes it. The default (NaN is never valid) is
+  unchanged. LERC stores such NaN as masked pixels, which read back as NaN.
+- The area-matched `OverviewReport` (Python: the dict `Raster.write` returns)
+  also counts, per band, the NaN samples under a numeric nodata
+  (`nan_pixels`), from the same pass, whether or not `area_matched_nan_valid`
+  makes them valid.
 - SRTM HGT tiles and the other raw-layout rasters (EHdr, ENVI, SAGA, ERS,
   Idrisi, Surfer 6 binary grids) are read in place (#333): `open_raster_lazy`
   reads only the header, a window reads only the rows it covers, and `info`

@@ -425,6 +425,10 @@ pub(crate) struct TiffOptions {
     pub overview_resampling: OverviewResampling,
     /// Area-matched overviews instead of `overview_resampling`: `Some(categorical)`.
     pub area_matched: Option<bool>,
+    /// Area-matched overviews count NaN under a numeric nodata as valid (rasterio's mask).
+    pub area_matched_nan_valid: bool,
+    /// Default-domain items to store the area-matched report in, besides its own domain.
+    pub report_metadata: Option<OverviewReportMetadata>,
     /// Overviews given by the caller, from the largest (factor 2), written as they are.
     pub supplied_overviews: Vec<std::sync::Arc<Raster>>,
     /// No overviews (COG `OVERVIEWS=NONE`).
@@ -472,6 +476,8 @@ impl Default for TiffOptions {
             overviews: Vec::new(),
             overview_resampling: OverviewResampling::Nearest,
             area_matched: None,
+            area_matched_nan_valid: false,
+            report_metadata: None,
             supplied_overviews: Vec::new(),
             no_overviews: false,
             metadata: None,
@@ -638,6 +644,14 @@ impl TiffOptions {
         if area_matched.is_some() && gdal_overviews {
             return Err(Error::Unsupported("area-matched overviews are built with COG_OVERVIEW_POLICY=SOURCE only".into()));
         }
+        if area_matched.is_none() && (options.area_matched_nan_valid || options.overview_report_metadata.is_some()) {
+            return Err(Error::InvalidArgument(
+                "area_matched_nan_valid and overview_report_metadata apply to area-matched overviews only".into(),
+            ));
+        }
+        if let Some(names) = &options.overview_report_metadata {
+            names.check(&options.metadata)?;
+        }
         let supplied_overviews = options.overview_data.clone();
         // A COG's overview factors stand for the source's existing overviews, as GDAL's COG driver
         // reuses those of its source (built at these factors with `gdaladdo`).
@@ -694,6 +708,8 @@ impl TiffOptions {
             nodata,
             overview_resampling,
             area_matched,
+            area_matched_nan_valid: options.area_matched_nan_valid,
+            report_metadata: options.overview_report_metadata.clone(),
             supplied_overviews,
             no_overviews,
             metadata: (!options.metadata.is_empty()).then(|| options.metadata.clone()),
@@ -940,11 +956,12 @@ struct Plan {
 
 /// Checks the options against the raster (only its header is read) and plans the file.
 fn plan(raster: &Raster, opts: &TiffOptions) -> Result<Plan> {
-    plan_with(raster, opts, &[])
+    plan_with(raster, opts, None)
 }
 
-/// [`plan`], with metadata items measured while the overviews were built.
-fn plan_with(raster: &Raster, opts: &TiffOptions, measured: &[DomainItem]) -> Result<Plan> {
+/// [`plan`], with the report of the area-matched overviews built: its items, in their own domain
+/// and, under the names of [`TiffOptions::report_metadata`], in the default one.
+fn plan_with(raster: &Raster, opts: &TiffOptions, report: Option<&OverviewReport>) -> Result<Plan> {
     if raster.cols == 0 || raster.rows == 0 || raster.bands == 0 {
         return Err(Error::InvalidArgument("cannot write an empty raster".into()));
     }
@@ -1042,6 +1059,16 @@ fn plan_with(raster: &Raster, opts: &TiffOptions, measured: &[DomainItem]) -> Re
             None => metadata.push((k.clone(), v.clone())),
         }
     }
+    // The report under the caller's names: over the raster's own items (a stale report of the
+    // source); the caller's own are refused by `OverviewReportMetadata::check`.
+    if let (Some(report), Some(names)) = (report, &opts.report_metadata) {
+        for (k, v) in report.default_domain_items(names) {
+            match metadata.iter_mut().find(|(key, _)| *key == k) {
+                Some(item) => item.1 = v,
+                None => metadata.push((k, v)),
+            }
+        }
+    }
     let mut structure = Vec::new();
     if let (true, Some((t, _))) = (opts.cog, tile) {
         // As GDAL's COG driver: the method of the overviews it computes, and LERC's loss.
@@ -1063,7 +1090,7 @@ fn plan_with(raster: &Raster, opts: &TiffOptions, measured: &[DomainItem]) -> Re
         }
     }
     // What the area-matched overviews measured (the valid area each level keeps), COG or not.
-    structure.extend(measured.iter().cloned());
+    structure.extend(report.map(OverviewReport::metadata_items).unwrap_or_default());
     let mut geo = geo_tags(raster, opts.nodata, &opts.band_metadata, &metadata, &structure)?;
     if !opts.georeferenced || !opts.gcps.is_empty() || opts.geo_transform.is_some_and(|gt| !crate::is_north_up(&gt)) {
         geo.retain(|(tag, _)| !matches!(tag, 33550 | 33922));
@@ -1159,7 +1186,7 @@ fn prepare(raster: &Raster, opts: &TiffOptions) -> Result<Prepared> {
         levels.extend(computed);
         if let Some(m) = measured {
             // The tags of the full-resolution image carry what the levels measured.
-            Plan { tile: _, layout, geo, color_map } = plan_with(raster, opts, &m.metadata_items())?;
+            Plan { tile: _, layout, geo, color_map } = plan_with(raster, opts, Some(&m))?;
             report = Some(m);
         }
     } else if opts.no_overviews {
@@ -1326,17 +1353,28 @@ fn area_matched_levels(
         factors: (0..count).map(|k| 1usize << (k + 1)).collect(),
         area_ratios: Vec::with_capacity(raster.bands),
         base_valid_pixels: Vec::with_capacity(raster.bands),
+        nan_pixels: Vec::with_capacity(raster.bands),
     };
     macro_rules! levels {
         ($($variant:ident),*) => {
             match &raster.data {
                 $(RasterData::$variant(v) => {
                     let mut bands: Vec<_> = crate::par::map_range_coarse(raster.bands, |b| {
-                        super::area_matched::area_matched_band(&v[b * n..(b + 1) * n], raster.cols, raster.rows, nodata, count, categorical, integral)
+                        super::area_matched::area_matched_band(
+                            &v[b * n..(b + 1) * n],
+                            raster.cols,
+                            raster.rows,
+                            nodata,
+                            opts.area_matched_nan_valid,
+                            count,
+                            categorical,
+                            integral,
+                        )
                     });
                     for b in &mut bands {
                         report.area_ratios.push(std::mem::take(&mut b.area_ratios));
                         report.base_valid_pixels.push(b.base_valid);
+                        report.nan_pixels.push(b.nan_pixels);
                     }
                     (0..count)
                         .map(|k| {
@@ -1365,8 +1403,19 @@ pub struct OverviewReport {
     /// Per band, per level: the kept cells times `factor^2` over the band's valid full-resolution
     /// pixels (1.0 is the full-resolution valid area; 0.0 when the band has no valid pixel).
     pub area_ratios: Vec<Vec<f64>>,
-    /// Per band, the valid (neither nodata nor NaN) full-resolution pixels.
+    /// Per band, the valid full-resolution pixels: neither nodata nor NaN (NaN counts as valid
+    /// under a numeric nodata with [`RasterWriteOptions::area_matched_nan_valid`]).
+    ///
+    /// [`RasterWriteOptions::area_matched_nan_valid`]: crate::RasterWriteOptions::area_matched_nan_valid
     pub base_valid_pixels: Vec<u64>,
+    /// Per band, the full-resolution NaN samples under a numeric nodata, counted in the same pass
+    /// whether or not [`RasterWriteOptions::area_matched_nan_valid`] makes them valid; 0 under a
+    /// NaN nodata and on integer bands. A caller that must treat NaN as rasterio's mask does (as
+    /// valid) and did not ask for `area_matched_nan_valid` can refuse the file on a non-zero count.
+    /// Not stored in the file's metadata.
+    ///
+    /// [`RasterWriteOptions::area_matched_nan_valid`]: crate::RasterWriteOptions::area_matched_nan_valid
+    pub nan_pixels: Vec<u64>,
 }
 
 impl OverviewReport {
@@ -1383,6 +1432,78 @@ impl OverviewReport {
             (d, "OVERVIEW_AREA_RATIOS", self.area_ratios.iter().map(|b| join(b)).collect::<Vec<_>>().join(";")),
             (d, "OVERVIEW_BASE_VALID_PIXELS", self.base_valid_pixels.iter().map(u64::to_string).collect::<Vec<_>>().join(";")),
         ]
+    }
+}
+
+impl OverviewReport {
+    /// The default-domain items, under the names of `names`, that the writer stores the report
+    /// in with [`RasterWriteOptions::overview_report_metadata`]: the area ratios formatted as
+    /// Python's `"%.6f"` (see [`format_fixed6`]) and comma-separated, and the valid pixel
+    /// counts; with several bands, the bands' values are separated by `;`.
+    ///
+    /// [`RasterWriteOptions::overview_report_metadata`]: crate::RasterWriteOptions::overview_report_metadata
+    pub fn default_domain_items(&self, names: &OverviewReportMetadata) -> Vec<(String, String)> {
+        let mut items = Vec::new();
+        if let Some(name) = &names.area_ratios {
+            let bands: Vec<String> =
+                self.area_ratios.iter().map(|b| b.iter().map(|r| format_fixed6(*r)).collect::<Vec<_>>().join(",")).collect();
+            items.push((name.clone(), bands.join(";")));
+        }
+        if let Some(name) = &names.base_valid_pixels {
+            items.push((name.clone(), self.base_valid_pixels.iter().map(u64::to_string).collect::<Vec<_>>().join(";")));
+        }
+        items
+    }
+}
+
+/// The names of the dataset metadata items (GDAL's default domain, rasterio's `tags()`) to also
+/// store an [`OverviewReport`] under, so that a reader that knows only the default domain finds
+/// it in the file's header, written once with the overviews. `None` leaves an item out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OverviewReportMetadata {
+    /// The area ratios, per level, as Python's `"%.6f"` comma-separated (ras2cng's
+    /// `overview_area_ratios`); bands separated by `;`.
+    pub area_ratios: Option<String>,
+    /// The valid full-resolution pixels (ras2cng's `overview_base_valid_pixels`); bands
+    /// separated by `;`.
+    pub base_valid_pixels: Option<String>,
+}
+
+impl OverviewReportMetadata {
+    /// Refuses empty or repeated names, `AREA_OR_POINT` (GDAL's own item), and names of the
+    /// caller's `metadata` items, which the report would otherwise silently replace.
+    pub(crate) fn check(&self, metadata: &[(String, String)]) -> Result<()> {
+        let names: Vec<&String> = [&self.area_ratios, &self.base_valid_pixels].into_iter().flatten().collect();
+        for (i, name) in names.iter().enumerate() {
+            if name.is_empty() || name.trim() != name.as_str() {
+                return Err(Error::InvalidArgument(format!("invalid overview report metadata name '{name}'")));
+            }
+            if name.eq_ignore_ascii_case("AREA_OR_POINT") {
+                return Err(Error::InvalidArgument("the overview report cannot be stored as AREA_OR_POINT".into()));
+            }
+            if names[..i].contains(name) {
+                return Err(Error::InvalidArgument(format!("the overview report names '{name}' twice")));
+            }
+            if metadata.iter().any(|(k, _)| k == *name) {
+                return Err(Error::InvalidArgument(format!(
+                    "the overview report would replace the metadata item '{name}' given with the raster: drop one of them"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Formats a value as Python's `"%.6f" % value` (or `f"{value:.6f}"`): six decimals, correctly
+/// rounded from the exact binary value with ties (the odd multiples of 1/128) to even, a `-`
+/// on negative values (`-0.000000` included), and `nan`, `inf` and `-inf`.
+pub fn format_fixed6(value: f64) -> String {
+    if value.is_nan() {
+        "nan".into()
+    } else if value.is_infinite() {
+        if value > 0.0 { "inf".into() } else { "-inf".into() }
+    } else {
+        format!("{value:.6}")
     }
 }
 
@@ -4953,6 +5074,235 @@ mod cog_option_tests {
         let band = |b: usize| report.area_ratios[b].iter().map(|r| format!("{r:?}")).collect::<Vec<_>>().join(",");
         assert!(md.contains(&format!("{};{}", band(0), band(1))), "{md}");
         assert!(md.contains(&format!(">{};{}<", 3 * rows, 100 * cols)), "{md}");
+    }
+
+    fn report_names() -> crate::OverviewReportMetadata {
+        crate::OverviewReportMetadata {
+            area_ratios: Some("overview_area_ratios".into()),
+            base_valid_pixels: Some("overview_base_valid_pixels".into()),
+        }
+    }
+
+    #[test]
+    fn area_matched_report_in_the_default_domain() {
+        let (cols, rows) = (1100, 700);
+        let cfg = wbraster::RasterConfig {
+            cols,
+            rows,
+            bands: 2,
+            x_min: 0.0,
+            y_min: 0.0,
+            cell_size: 1.0,
+            nodata: 0.0,
+            data_type: DataType::I16,
+            ..Default::default()
+        };
+        let n = cols * rows;
+        let v: Vec<i16> = (0..2 * n).map(|i| if i < n { ((i % cols) < 3) as i16 * 5 } else { ((i / cols) % 7 == 0) as i16 * 9 }).collect();
+        let mut r = Raster::from_data_native(cfg, RasterData::I16(v)).unwrap();
+        // A stale report among the raster's own items is replaced.
+        r.metadata.push(("overview_area_ratios".into(), "stale".into()));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("two.tif");
+        let o = crate::RasterWriteOptions {
+            driver: Some(crate::formats::RasterDriver::Cog),
+            overview_resampling: Some("area_matched".into()),
+            overview_report_metadata: Some(report_names()),
+            metadata: vec![("compression".into(), "LZW".into())],
+            ..Default::default()
+        };
+        let ds = crate::RasterDataset::new(r, true);
+        let report = crate::write_raster_dataset_with_report(&ds, p.to_str().unwrap(), &o).unwrap().unwrap();
+        let band = |b: usize| report.area_ratios[b].iter().map(|r| format!("{r:.6}")).collect::<Vec<_>>().join(",");
+        let ratios = format!("{};{}", band(0), band(1));
+        let read = crate::open_raster(p.to_str().unwrap()).unwrap();
+        let item = |k: &str| read.raster.metadata.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
+        assert_eq!(item("overview_area_ratios"), Some(ratios));
+        assert_eq!(item("overview_base_valid_pixels"), Some(format!("{};{}", 3 * rows, 100 * cols)));
+        assert_eq!(item("compression").as_deref(), Some("LZW"));
+        // Its own domain is unchanged.
+        let md = gdal_metadata(&p);
+        assert!(md.contains(r#"<Item name="OVERVIEW_AREA_RATIOS" domain="OVERVIEW_REPORT">"#), "{md}");
+        // One name only.
+        let o = crate::RasterWriteOptions {
+            overview_report_metadata: Some(crate::OverviewReportMetadata { area_ratios: Some("r".into()), base_valid_pixels: None }),
+            ..o
+        };
+        crate::write_raster_dataset_with_report(&ds, p.to_str().unwrap(), &o).unwrap().unwrap();
+        let read = crate::open_raster(p.to_str().unwrap()).unwrap();
+        assert!(read.raster.metadata.iter().any(|(k, _)| k == "r"));
+        assert!(!read.raster.metadata.iter().any(|(k, _)| k == "overview_base_valid_pixels"));
+    }
+
+    #[test]
+    fn report_metadata_and_nan_validity_refusals() {
+        let r = grid(600, 520, DataType::F32, |x, y| if x < y { -9999.0 } else { x as f64 });
+        let ds = crate::RasterDataset::new(r, true);
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("x.tif");
+        let p = p.to_str().unwrap();
+        let am = crate::RasterWriteOptions {
+            driver: Some(crate::formats::RasterDriver::Cog),
+            overview_resampling: Some("area_matched".into()),
+            ..Default::default()
+        };
+        let names = |a: &str, b: &str| crate::OverviewReportMetadata { area_ratios: Some(a.into()), base_valid_pixels: Some(b.into()) };
+        let bad = [
+            // A name of the caller's metadata.
+            crate::RasterWriteOptions {
+                overview_report_metadata: Some(report_names()),
+                metadata: vec![("overview_area_ratios".into(), "0.5".into())],
+                ..am.clone()
+            },
+            crate::RasterWriteOptions { overview_report_metadata: Some(names("a", "a")), ..am.clone() },
+            crate::RasterWriteOptions { overview_report_metadata: Some(names("", "b")), ..am.clone() },
+            crate::RasterWriteOptions { overview_report_metadata: Some(names("AREA_OR_POINT", "b")), ..am.clone() },
+            // Not area-matched overviews.
+            crate::RasterWriteOptions {
+                overview_report_metadata: Some(report_names()),
+                overview_resampling: Some("average".into()),
+                ..am.clone()
+            },
+            crate::RasterWriteOptions { area_matched_nan_valid: true, overview_resampling: None, ..am.clone() },
+            // Not terrio's GeoTIFF writer.
+            crate::RasterWriteOptions { area_matched_nan_valid: true, driver: Some(crate::formats::RasterDriver::AAIGrid), ..am.clone() },
+        ];
+        for o in bad {
+            assert!(crate::write_raster_dataset_with_report(&ds, p, &o).is_err(), "{o:?}");
+        }
+        // Nothing to store without levels: no report, no items.
+        let small = crate::RasterDataset::new(grid(100, 80, DataType::F32, |x, _| x as f64), true);
+        let o = crate::RasterWriteOptions { overview_report_metadata: Some(report_names()), ..am.clone() };
+        assert!(crate::write_raster_dataset_with_report(&small, p, &o).unwrap().is_none());
+        let read = crate::open_raster(p).unwrap();
+        assert!(!read.raster.metadata.iter().any(|(k, _)| k.starts_with("overview_")));
+    }
+
+    #[test]
+    fn nan_valid_overviews_carry_nan_means() {
+        let nd = -9999.0;
+        let (cols, rows) = (600, 520);
+        // A wet half with a NaN every 37 pixels, under a numeric nodata.
+        let r = grid(cols, rows, DataType::F32, |x, y| {
+            if x < y {
+                nd
+            } else if (y * cols + x) % 37 == 0 {
+                f64::NAN
+            } else {
+                x as f64 + 0.25
+            }
+        });
+        let nans = (0..rows).flat_map(|y| (0..cols).map(move |x| (x, y))).filter(|&(x, y)| x >= y && (y * cols + x) % 37 == 0).count();
+        let wet = (0..rows).flat_map(|y| (0..cols).map(move |x| (x, y))).filter(|&(x, y)| x >= y).count();
+        let ds = crate::RasterDataset::new(r, true);
+        let dir = tempfile::tempdir().unwrap();
+        for compression in ["DEFLATE", "LERC_DEFLATE"] {
+            let p = dir.path().join(format!("{compression}.tif"));
+            let mut o = crate::RasterWriteOptions {
+                driver: Some(crate::formats::RasterDriver::Cog),
+                compression: Some(compression.into()),
+                overview_resampling: Some("area_matched".into()),
+                ..Default::default()
+            };
+            let default = crate::write_raster_dataset_with_report(&ds, p.to_str().unwrap(), &o).unwrap().unwrap();
+            assert_eq!(default.base_valid_pixels, vec![(wet - nans) as u64]);
+            assert_eq!(default.nan_pixels, vec![nans as u64]);
+            o.area_matched_nan_valid = true;
+            let report = crate::write_raster_dataset_with_report(&ds, p.to_str().unwrap(), &o).unwrap().unwrap();
+            assert_eq!(report.base_valid_pixels, vec![wet as u64]);
+            assert_eq!(report.nan_pixels, vec![nans as u64]);
+            // The first level holds NaN means, read back as NaN (LERC: masked pixels).
+            let mut lazy = crate::open_raster_lazy(p.to_str().unwrap()).unwrap();
+            let (w, h) = lazy.overviews()[0];
+            let level =
+                lazy.read_window(crate::Window::full(w, h), &crate::WindowOptions { bands: vec![], overview: Some(0) }).unwrap().raster;
+            let values: Vec<f64> = (0..w * h).map(|i| level.get(0, (i / w) as isize, (i % w) as isize)).collect();
+            let nan_cells = values.iter().filter(|v| v.is_nan()).count();
+            assert!(nan_cells > 0, "{compression}");
+            let kept = values.iter().filter(|v| **v != nd).count();
+            assert_eq!(kept as f64 * 4.0 / wet as f64, report.area_ratios[0][0], "{compression}");
+        }
+    }
+
+    #[test]
+    fn fixed6_formats_as_python() {
+        // Python: [f"{v:.6f}" for v in values].
+        let cases = [
+            (0.0, "0.000000"),
+            (-0.0, "-0.000000"),
+            (1.0, "1.000000"),
+            (1.0 / 3.0, "0.333333"),
+            (2.0 / 3.0, "0.666667"),
+            // Exact ties, the odd multiples of 1/128, round to even.
+            (1.0 / 128.0, "0.007812"),
+            (3.0 / 128.0, "0.023438"),
+            (5.0 / 128.0, "0.039062"),
+            (127.0 / 128.0, "0.992188"),
+            (129.0 / 128.0, "1.007812"),
+            // Not ties: the binary value is just above or below the decimal one.
+            (0.0000005, "0.000000"),
+            (0.0000015, "0.000002"),
+            (1.0000005, "1.000001"),
+            (0.1234565, "0.123456"),
+            (1e-7, "0.000000"),
+            (-1e-7, "-0.000000"),
+            (123456.7890125, "123456.789012"),
+            (1e20, "100000000000000000000.000000"),
+            (f64::NAN, "nan"),
+            (f64::INFINITY, "inf"),
+            (f64::NEG_INFINITY, "-inf"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(crate::format_fixed6(v), want, "{v:?}");
+        }
+    }
+
+    /// `"%.6f"` from the exact binary value, in integers: `v = m * 2^e`, so `v * 10^6` is
+    /// `m * 10^6 / 2^-e`, rounded half to even (values below 2^40).
+    fn exact_fixed6(v: f64) -> String {
+        let bits = v.abs().to_bits();
+        let (exp, frac) = (((bits >> 52) & 0x7ff) as i32, bits & ((1u64 << 52) - 1));
+        let (m, e) = if exp == 0 { (frac, -1074) } else { (frac | (1u64 << 52), exp - 1075) };
+        assert!(e < 0);
+        let n = m as u128 * 1_000_000;
+        let s = (-e) as u32;
+        let q = if s >= 128 {
+            0 // n < 2^73: below half a unit.
+        } else {
+            let q = n >> s;
+            let r = n - (q << s);
+            let half = 1u128 << (s - 1);
+            if r > half || (r == half && q & 1 == 1) { q + 1 } else { q }
+        };
+        format!("{}{}.{:06}", if v.is_sign_negative() { "-" } else { "" }, q / 1_000_000, q % 1_000_000)
+    }
+
+    #[test]
+    fn fixed6_is_correctly_rounded_half_to_even() {
+        let mut values = Vec::new();
+        // Every tie below 64 (the odd multiples of 1/128), and the doubles beside it.
+        for k in (1..64 * 128).step_by(2) {
+            let t = k as f64 / 128.0;
+            values.extend([t, f64::from_bits(t.to_bits() - 1), f64::from_bits(t.to_bits() + 1)]);
+        }
+        // The doubles nearest the decimal half-way points of six decimals, which are not ties.
+        for k in 0..20_000u64 {
+            let t = (2 * k + 1) as f64 / 2_000_000.0;
+            values.extend([t, f64::from_bits(t.to_bits() - 1), f64::from_bits(t.to_bits() + 1)]);
+        }
+        // Pseudo-random values from 1e-9 to 1e6, and their negatives.
+        let mut x = 0x9E37_79B9_7F4A_7C15u64;
+        for i in 0..200_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let v = (x >> 11) as f64 / (1u64 << 53) as f64 * 10f64.powi(i % 16 - 9);
+            values.extend([v, -v]);
+        }
+        values.extend([0.0, -0.0, 1.0, 5e-7, f64::MIN_POSITIVE, 5e-324, 0.9999995, f64::from_bits(0.9999995f64.to_bits() - 1)]);
+        for v in values {
+            assert_eq!(crate::format_fixed6(v), exact_fixed6(v), "{v:?}");
+        }
     }
 
     #[test]
