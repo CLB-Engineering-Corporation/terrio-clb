@@ -107,6 +107,8 @@ __all__ = [
     "set_geom_type",
     "combine",
     "sort",
+    "simplify_wkb",
+    "ArrowArray",
     "vsi_list",
     "vsi_stat",
     "vsi_read",
@@ -1566,6 +1568,7 @@ def simplify(
     or Douglas-Peucker (``method="douglas-peucker"``)."""
     ...
 
+@final
 class ArrowArray:
     """An Arrow array exported through ``__arrow_c_array__``; convert with ``pyarrow.array()``."""
 

@@ -106,7 +106,10 @@ fn stats_dict<'py>(py: Python<'py>, s: &SimplifyStats, seconds: f64) -> PyResult
     Ok(d)
 }
 
-fn run(py: Python<'_>, items: &[Option<&[u8]>], options: &SimplifyOptions) -> PyResult<(Vec<Option<Vec<u8>>>, SimplifyStats, f64)> {
+/// Simplified WKB (or None), the counts and the seconds taken.
+type Simplified = (Vec<Option<Vec<u8>>>, SimplifyStats, f64);
+
+fn run(py: Python<'_>, items: &[Option<&[u8]>], options: &SimplifyOptions) -> PyResult<Simplified> {
     py.detach(|| {
         let t = std::time::Instant::now();
         simplify_wkb_many(items, options).map(|(out, stats)| (out, stats, t.elapsed().as_secs_f64()))
