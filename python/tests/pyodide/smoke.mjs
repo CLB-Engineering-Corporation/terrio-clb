@@ -53,6 +53,24 @@ with rasterio.open("/tmp/t.tif") as src:
 
 xs, ys = terrio.transform_points([-117.0], [37.0], "EPSG:4326", "EPSG:32611")
 assert abs(xs[0] - 500000.0) < 1e-6 and abs(ys[0] - 4094872.370454) < 1e-5, (xs, ys)
+
+# Indexes work on in-memory datasets; paths and their output protection do not.
+rgb = np.stack([np.arange(64 * 48, dtype="uint8").reshape(48, 64)] * 3)
+rgb_raster = terrio.Raster.from_array(rgb, gt, "EPSG:32611")
+index = terrio.raster_index({"a.tif": rgb_raster})
+assert index.to_bytes("index.fgb")
+refused = [
+    lambda: terrio.raster_index("/tmp/t.tif"),
+    lambda: terrio.vector_index("/tmp/v.fgb"),
+    lambda: index.write("/tmp/index.fgb"),
+]
+for call in refused:
+    try:
+        call()
+    except Exception as error:
+        assert "this build" in str(error), error
+    else:
+        raise AssertionError("expected this build to refuse the call")
 f"terrio {terrio.__version__} in Pyodide: ok"
 `);
 console.log(result);

@@ -7,10 +7,10 @@ Everything in CLB build 0.5.0.1 plus, since tag `gpt-cmdr-v0.5.0.1`:
 - Douglas-Peucker simplification on WKB, parallel over features (`terrio.simplify_wkb`,
   `simplify --method douglas-peucker`, `simplify(..., method="douglas-peucker")`): see *Vector
   operations* under *Unreleased* below.
-- The Pyodide wheel builds again: Python bindings that called core functions compiled out on
-  WebAssembly (raster and vector indexes on paths, palette files, HTTP retry logging) are gated.
-  In Pyodide those path and output-file calls raise a clear error; native builds are unchanged.
-  Backport of the upstream fix; this job failed on the 0.5.0.1 tag.
+- The Pyodide wheel builds again: the raster and vector index bindings called core functions
+  compiled out on WebAssembly. In Pyodide, index calls on paths and `DatasetIndex.write` now
+  raise a clear error and in-memory indexes work; native builds are unchanged. Backport of the
+  upstream fix; this job failed on the 0.5.0.1 tag, whose release has no Pyodide wheel.
 - Repository only: Dependabot version updates are off in the CLB build.
 
 Wheel version `0.5.0.2`, crate version `0.5.0+gpt-cmdr.2`. Published only as GitHub Release
