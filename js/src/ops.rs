@@ -1196,9 +1196,22 @@ fn vector_geom_op(src: &JsValue, op: terrio::ops::vector_geom::GeometryOp) -> Re
 
 /// Topology-preserving simplification of every geometry (GEOS's TopologyPreservingSimplifier,
 /// as `gdal vector simplify`), with a tolerance in CRS units. Z is kept, M dropped.
+/// `method: "douglas-peucker"` runs GEOS's DouglasPeuckerSimplifier without its repair step
+/// instead (faster; rings may self-intersect at large tolerances; Z kept, M dropped); `collapse`
+/// (`"keep"`, the default, or `"drop"`) then decides what happens to rings left with fewer than
+/// four points.
 #[wasm_bindgen]
-pub fn simplify(src: JsValue, tolerance: f64) -> Result<Dataset, JsError> {
-    vector_geom_op(&src, terrio::ops::vector_geom::GeometryOp::Simplify { tolerance })
+pub fn simplify(src: JsValue, tolerance: f64, method: Option<String>, collapse: Option<String>) -> Result<Dataset, JsError> {
+    use terrio::ops::simplify_dp::SimplifyMethod;
+    use terrio::ops::vector_geom::GeometryOp;
+    let method = method.as_deref().unwrap_or("preserve-topology").parse::<SimplifyMethod>().map_err(js_err)?;
+    let op = match method {
+        SimplifyMethod::PreserveTopology => GeometryOp::Simplify { tolerance },
+        SimplifyMethod::DouglasPeucker => {
+            GeometryOp::SimplifyDouglasPeucker { tolerance, collapse: collapse.as_deref().unwrap_or("keep").parse().map_err(js_err)? }
+        }
+    };
+    vector_geom_op(&src, op)
 }
 
 /// Adds vertices so that no segment is longer than `maxLength` (CRS units), as `gdal vector

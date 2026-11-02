@@ -46,10 +46,24 @@ pub struct SimplifyArgs {
     /// Distance tolerance in CRS units (degrees in a geographic CRS), at least 0.
     #[arg(long, allow_negative_numbers = true)]
     tolerance: f64,
+    /// `preserve-topology` (GEOS's TopologyPreservingSimplifier, as gdal vector simplify) or
+    /// `douglas-peucker` (GEOS's DouglasPeuckerSimplifier without its repair step: faster, but
+    /// rings may self-intersect at large tolerances).
+    #[arg(long, default_value = "preserve-topology")]
+    method: String,
+    /// With douglas-peucker, rings left with fewer than four points: `keep` their vertices or
+    /// `drop` them as GEOS does (a collapsed shell empties its polygon).
+    #[arg(long, default_value = "keep")]
+    collapse: String,
 }
 
 pub fn simplify(a: SimplifyArgs) -> Result<()> {
-    run_op(&a.input, &a.output, GeometryOp::Simplify { tolerance: a.tolerance })
+    use terrio::ops::simplify_dp::SimplifyMethod;
+    let op = match a.method.parse::<SimplifyMethod>()? {
+        SimplifyMethod::PreserveTopology => GeometryOp::Simplify { tolerance: a.tolerance },
+        SimplifyMethod::DouglasPeucker => GeometryOp::SimplifyDouglasPeucker { tolerance: a.tolerance, collapse: a.collapse.parse()? },
+    };
+    run_op(&a.input, &a.output, op)
 }
 
 #[derive(clap::Args)]

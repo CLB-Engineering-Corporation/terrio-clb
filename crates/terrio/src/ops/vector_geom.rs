@@ -19,6 +19,7 @@
 
 use super::hull;
 use super::simplify;
+use super::simplify_dp::{self, RingCollapse};
 use crate::{Error, Feature, FieldValue, Geometry, GeometryType, Layer, Result};
 use wbvector::{Coord, Ring};
 
@@ -216,6 +217,16 @@ pub enum GeometryOp {
         /// The distance tolerance, in CRS units (non-negative).
         tolerance: f64,
     },
+    /// Douglas-Peucker simplification of each linear component (GEOS's
+    /// `DouglasPeuckerSimplifier` without its repair step, see [`crate::ops::simplify_dp`]):
+    /// faster than [`GeometryOp::Simplify`], but rings may self-intersect at large tolerances.
+    /// Z is kept, M dropped.
+    SimplifyDouglasPeucker {
+        /// The distance tolerance, in CRS units (non-negative).
+        tolerance: f64,
+        /// Rings left with fewer than four points.
+        collapse: RingCollapse,
+    },
     /// `gdal vector segmentize`: vertices added so that no segment is longer than `max_length`
     /// (OGR's `segmentize`, see [`crate::ops::simplify::segmentize`]).
     Segmentize {
@@ -248,7 +259,9 @@ impl GeometryOp {
     /// Checks the operation's parameters.
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::Simplify { tolerance } if !(*tolerance >= 0.0 && tolerance.is_finite()) => {
+            Self::Simplify { tolerance } | Self::SimplifyDouglasPeucker { tolerance, .. }
+                if !(*tolerance >= 0.0 && tolerance.is_finite()) =>
+            {
                 Err(Error::InvalidArgument("the simplification tolerance must be a non-negative number".into()))
             }
             Self::Segmentize { max_length } if !(*max_length > 0.0 && max_length.is_finite()) => {
@@ -277,6 +290,7 @@ impl GeometryOp {
     pub fn apply_geometry(&self, g: Geometry, layer_type: Option<GeometryType>) -> Result<Option<Geometry>> {
         Ok(Some(match self {
             Self::Simplify { tolerance } => simplify::simplify_preserve_topology(&g, *tolerance)?,
+            Self::SimplifyDouglasPeucker { tolerance, collapse } => simplify_dp::simplify_douglas_peucker(&g, *tolerance, *collapse)?,
             Self::Segmentize { max_length } => simplify::segmentize(&g, *max_length)?,
             Self::ConvexHull => hull::convex_hull(&g)?,
             Self::ConcaveHull(o) => {

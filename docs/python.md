@@ -456,7 +456,24 @@ and `sort` run the [vector geometry commands](cli.md#vector-geometry-commands) (
 `gdal vector` commands of those names) and return a `Layer`. Inputs may be a vector path,
 `VectorDataset`, `Layer`, list of layers, or GeoJSON, with a single layer, or the one `layer=`
 names. `convert(..., simplify=TOLERANCE)` and `convert(..., segmentize=MAX_LENGTH)` are
-`ogr2ogr`'s `-simplify` and `-segmentize`.
+`ogr2ogr`'s `-simplify` and `-segmentize`. `simplify(..., method="douglas-peucker")` is GEOS's
+DouglasPeuckerSimplifier (see the [CLI](cli.md#vector-geometry-commands)).
+
+`simplify_wkb(geometries, tolerance)` runs Douglas-Peucker directly on WKB, in parallel over
+features, without building layers: `geometries` is an Arrow binary array (pyarrow `binary`,
+`large_binary` or `binary_view`, `geoarrow.wkb` included, or a ChunkedArray) or a sequence of
+`bytes`/`None`, and the result comes back the same way (a `pyarrow.Array` of the input's type, or
+a list). Byte order, ISO or EWKB type codes and SRIDs, Z and M are kept; points pass through.
+`collapse="keep"` (default) or `"drop"`, `method="preserve-topology"`, and `stats=True` (counts
+of vertices in and out, collapsed rings kept or dropped) as above.
+
+```python
+import shapely
+
+wkb = shapely.to_wkb(polygons)
+simple, stats = terrio.simplify_wkb(wkb, 0.1, stats=True)
+polygons = shapely.from_wkb(simple)
+```
 
 ```python
 groups = terrio.combine("places.gpkg", group_by=["adm0_a3"])

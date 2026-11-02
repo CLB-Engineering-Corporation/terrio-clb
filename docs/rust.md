@@ -376,7 +376,10 @@ Python and JavaScript operation bindings are not yet provided for these addition
 to layers read and written as streams through `VectorTranslateOptions::geometry_op` (which is
 also `ogr2ogr`'s `-simplify`/`-segmentize`). `vector_geom::combine` (`CombineOptions`) and
 `vector_geom::sort` (`SortMethod`) take whole layers; `vector_geom::force_to` is OGR's `forceTo`.
-The single-geometry algorithms are `ops::simplify::{simplify_preserve_topology, segmentize}`
+`GeometryOp::SimplifyDouglasPeucker` is GEOS's DouglasPeuckerSimplifier without its repair step.
+The single-geometry algorithms are `ops::simplify::{simplify_preserve_topology, segmentize}`,
+`ops::simplify_dp::{simplify_douglas_peucker, simplify_wkb, simplify_wkb_many}` (the last two on
+WKB, `simplify_wkb_many` in parallel over features, with `SimplifyOptions` and `SimplifyStats`)
 and `ops::hull::{convex_hull, concave_hull, concave_hull_of_polygons}`. They are pure Rust and
 included in WebAssembly builds.
 
