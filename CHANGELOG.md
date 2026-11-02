@@ -17,6 +17,17 @@ pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corp
 
 ## Unreleased
 
+### Vector operations
+
+- Douglas-Peucker simplification (GEOS's `DouglasPeuckerSimplifier`, shapely's
+  `simplify(..., preserve_topology=False)`) without its repair step: `terrio.simplify_wkb` in
+  Python runs it directly on WKB arrays (Arrow binary arrays or sequences of bytes), in parallel
+  over features, keeping byte order, type codes, Z and M; `simplify --method douglas-peucker`
+  (`--collapse keep|drop`) on the command line, `simplify(..., method="douglas-peucker")` in
+  Python and JavaScript, and `ops::simplify_dp` / `GeometryOp::SimplifyDouglasPeucker` in Rust.
+  Vertex for vertex equal to GEOS 3.14 wherever GEOS's result is valid and no ring collapses;
+  collapsed rings keep their vertices by default instead of being dropped.
+
 ### Formats
 
 - NetCDF and HDF5: hdf5-reader, hdf5-core, netcdf-reader and netcdf-core 0.10.1 from

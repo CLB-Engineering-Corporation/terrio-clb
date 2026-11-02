@@ -107,6 +107,8 @@ __all__ = [
     "set_geom_type",
     "combine",
     "sort",
+    "simplify_wkb",
+    "ArrowArray",
     "vsi_list",
     "vsi_stat",
     "vsi_read",
@@ -1554,8 +1556,48 @@ def sql(src: Any, query: str, *, layers: list[str] | None = None) -> Layer:
     """Run the documented OGR SQL subset; DISTINCT and summaries discard geometry."""
     ...
 
-def simplify(src: Any, tolerance: float, *, layer: str | None = None) -> Layer:
-    """Topology-preserving simplification (GEOS TopologyPreservingSimplifier); Z kept, M dropped."""
+def simplify(
+    src: Any,
+    tolerance: float,
+    *,
+    layer: str | None = None,
+    method: Literal["preserve-topology", "douglas-peucker"] = "preserve-topology",
+    collapse: Literal["keep", "drop"] = "keep",
+) -> Layer:
+    """Topology-preserving simplification (GEOS TopologyPreservingSimplifier; Z kept, M dropped)
+    or Douglas-Peucker (``method="douglas-peucker"``)."""
+    ...
+
+@final
+class ArrowArray:
+    """An Arrow array exported through ``__arrow_c_array__``; convert with ``pyarrow.array()``."""
+
+    def __arrow_c_array__(self, requested_schema: object | None = None) -> tuple[object, object]: ...
+    def __arrow_c_schema__(self) -> object: ...
+    def __len__(self) -> int: ...
+
+@overload
+def simplify_wkb(
+    geometries: Any,
+    tolerance: float,
+    *,
+    method: Literal["douglas-peucker", "preserve-topology"] = "douglas-peucker",
+    collapse: Literal["keep", "drop"] = "keep",
+    stats: Literal[False] = False,
+) -> Any: ...
+@overload
+def simplify_wkb(
+    geometries: Any,
+    tolerance: float,
+    *,
+    method: Literal["douglas-peucker", "preserve-topology"] = "douglas-peucker",
+    collapse: Literal["keep", "drop"] = "keep",
+    stats: Literal[True],
+) -> tuple[Any, dict[str, Any]]:
+    """Douglas-Peucker (GEOS DouglasPeuckerSimplifier without repair) on WKB, in parallel.
+
+    Takes and returns an Arrow binary array (pyarrow) or a sequence of ``bytes``/``None``.
+    """
     ...
 
 def segmentize(src: Any, max_length: float, *, layer: str | None = None) -> Layer:

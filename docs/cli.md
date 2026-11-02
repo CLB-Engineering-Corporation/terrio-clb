@@ -222,6 +222,16 @@ simplify` on the conformance data. Z is kept and M dropped, as GDAL's GEOS conve
 `convert --simplify TOLERANCE` (`ogr2ogr -simplify`) applies the same operation before
 reprojection and keeps a geometry whose simplification fails.
 
+`simplify --method douglas-peucker` runs GEOS's `DouglasPeuckerSimplifier` instead (shapely's
+`simplify(..., preserve_topology=False)`, PostGIS's `ST_Simplify`): each line and ring on its own,
+without the crossing checks, so it is several times faster and rings may self-intersect at large
+tolerances. Distances follow GEOS's formulas, and a ring's start point may move as in GEOS, so
+the vertices are GEOS's wherever GEOS's result is valid and no ring collapses. Two differences:
+there is no repair step (GEOS rebuilds an invalid polygonal result with a zero-width buffer), and
+a ring left with fewer than four points keeps its input vertices (`--collapse keep`, the default)
+instead of being dropped (`--collapse drop`, as GEOS: a hole goes, a collapsed shell empties its
+polygon). Z is kept and M dropped.
+
 `segmentize --max-length` is OGR's `segmentize`: a segment of length L gets
 `floor(L / max - 0.01)` evenly spaced points (none when L is within a relative 1e-5 of the
 maximum). Lines are processed from the end with the larger X (then Y), so a line and its

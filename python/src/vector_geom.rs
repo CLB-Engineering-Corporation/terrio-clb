@@ -44,19 +44,37 @@ fn run(py: Python<'_>, src: &Bound<'_, PyAny>, layer: Option<String>, op: Geomet
 }
 
 /// Simplifies geometries, preserving their topology, as `gdal vector simplify` (GEOS's
-/// TopologyPreservingSimplifier) does.
+/// TopologyPreservingSimplifier) does, or with Douglas-Peucker.
 ///
 /// Args:
 ///     src: A vector path, VectorDataset, Layer, list of layers or GeoJSON.
 ///     tolerance: The distance tolerance, in CRS units (degrees for geographic CRSs).
 ///     layer: The layer to use, when the input has several.
+///     method: `"preserve-topology"` (default) or `"douglas-peucker"` (GEOS's
+///         DouglasPeuckerSimplifier without its repair step, as `simplify_wkb`: faster, but
+///         rings may self-intersect at large tolerances; Z kept, M dropped).
+///     collapse: With Douglas-Peucker, rings left with fewer than four points: `"keep"` their
+///         vertices (default) or `"drop"` them as GEOS does.
 ///
 /// Returns:
-///     Layer: The simplified features. Z is kept and M dropped, as GDAL does.
+///     Layer: The simplified features. With topology preserved, Z is kept and M dropped, as
+///     GDAL does.
 #[pyfunction]
-#[pyo3(signature = (src, tolerance, *, layer=None))]
-fn simplify(py: Python<'_>, src: &Bound<'_, PyAny>, tolerance: f64, layer: Option<String>) -> PyResult<PyLayer> {
-    run(py, src, layer, GeometryOp::Simplify { tolerance })
+#[pyo3(signature = (src, tolerance, *, layer=None, method="preserve-topology", collapse="keep"))]
+fn simplify(
+    py: Python<'_>,
+    src: &Bound<'_, PyAny>,
+    tolerance: f64,
+    layer: Option<String>,
+    method: &str,
+    collapse: &str,
+) -> PyResult<PyLayer> {
+    use terrio::ops::simplify_dp::SimplifyMethod;
+    let op = match method.parse::<SimplifyMethod>().py()? {
+        SimplifyMethod::PreserveTopology => GeometryOp::Simplify { tolerance },
+        SimplifyMethod::DouglasPeucker => GeometryOp::SimplifyDouglasPeucker { tolerance, collapse: collapse.parse().py()? },
+    };
+    run(py, src, layer, op)
 }
 
 /// Adds vertices so that no segment is longer than `max_length`, as `gdal vector segmentize`.

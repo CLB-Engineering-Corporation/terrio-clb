@@ -37,7 +37,7 @@ pub(crate) fn dist(a: P, b: P) -> f64 {
 }
 
 /// The distance from `p` to the segment `a`-`b` (GEOS's `Distance::pointToSegment`).
-fn point_segment_distance(p: P, a: P, b: P) -> f64 {
+pub(crate) fn point_segment_distance(p: P, a: P, b: P) -> f64 {
     if a == b {
         return dist(p, a);
     }

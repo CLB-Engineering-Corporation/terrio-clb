@@ -130,6 +130,16 @@ fn chunks_mut_on<const COARSE: bool, T: Send>(data: &mut [T], size: usize, f: im
     data.chunks_mut(size).enumerate().for_each(|(i, c)| f(i, c));
 }
 
+/// Runs two closures, in parallel when there is a pool for coarse work, and returns both
+/// results.
+pub(crate) fn join<A: Send, B: Send>(a: impl FnOnce() -> A + Send, b: impl FnOnce() -> B + Send) -> (A, B) {
+    #[cfg(threads)]
+    if let Some(p) = pool_for(true) {
+        return p.install(|| rayon::join(a, b));
+    }
+    (a(), b())
+}
+
 /// Maps `f` over `0..n`, in parallel (fine-grained work: see the module's documentation),
 /// keeping the order.
 pub(crate) fn map_range<R: Send>(n: usize, f: impl Fn(usize) -> R + Sync + Send) -> Vec<R> {

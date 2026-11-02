@@ -26,6 +26,7 @@ from collections.abc import Iterator as _Iterator
 from typing import Any as _Any
 
 from terrio._terrio import (
+    ArrowArray,
     ArrowTable,
     DatasetIndex,
     FeatureStream,
@@ -106,6 +107,7 @@ from terrio._terrio import (
     set_network_enabled,
     sieve,
     simplify,
+    simplify_wkb,
     sort,
     sql,
     swap_xy,
@@ -152,6 +154,7 @@ __all__ = [
     "refresh_overviews",
     "update_raster",
     "validate_cog",
+    "ArrowArray",
     "ArrowTable",
     "CRSError",
     "DatasetIndex",
@@ -229,6 +232,7 @@ __all__ = [
     "set_field_type",
     "sieve",
     "simplify",
+    "simplify_wkb",
     "sort",
     "sql",
     "swap_xy",

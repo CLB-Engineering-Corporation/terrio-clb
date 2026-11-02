@@ -17,6 +17,7 @@ mod pointcloud;
 mod query;
 mod raster;
 mod rio;
+mod simplify_wkb;
 mod stream;
 mod terrain;
 mod tile_index;
@@ -106,6 +107,7 @@ fn _terrio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     rio::register(m)?;
     stream::register(m)?;
     vector_geom::register(m)?;
+    simplify_wkb::register(m)?;
     vsi::register(m)?;
     vector_dataset::register(m)?;
     geoparquet::register(m)?;

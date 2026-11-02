@@ -1815,6 +1815,9 @@ test("vector geometry operations: simplify, segmentize, hulls, swap-xy, set-geom
   const simple = terrio.simplify(line, 1).toGeoJSON();
   assert.deepEqual(simple.features[0].geometry.coordinates, [[0, 0], [10, 0]]);
   assert.equal(simple.features[2].geometry, null);
+  const dp = terrio.simplify(line, 1, "douglas-peucker").toGeoJSON();
+  assert.deepEqual(dp.features[0].geometry.coordinates, [[0, 0], [10, 0]]);
+  assert.throws(() => terrio.simplify(line, 1, "visvalingam"), /method/);
   const dense = terrio.segmentize(line, 3).toGeoJSON();
   assert.equal(dense.features[0].geometry.coordinates.length, 5);
   assert.equal(terrio.convexHull(line).toGeoJSON().features[1].geometry.type, "Point");

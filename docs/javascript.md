@@ -254,7 +254,8 @@ Raw GeoJSON inputs use the layer name `layer`; use `Layer.from_geojson(..., name
 geometryType, multi, single, linear, dim, layerOnly, featureOnly, skip })`, `combine(src, {
 groupBy, keepNested, addExtraFields })` and `sort(src, { method })` run the
 [vector geometry commands](cli.md#vector-geometry-commands) on every layer of a `Dataset`,
-file bytes or GeoJSON, and return a `Dataset`.
+file bytes or GeoJSON, and return a `Dataset`. `simplify(src, tolerance, "douglas-peucker",
+collapse)` runs GEOS's DouglasPeuckerSimplifier instead of the topology-preserving default.
 
 ```js
 const hulls = concaveHull(combine(places, { groupBy: ["adm0_a3"] }), 0.3, { allowHoles: true });
