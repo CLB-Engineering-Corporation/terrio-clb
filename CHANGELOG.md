@@ -1,5 +1,26 @@
 # Changelog
 
+## CLB build 0.5.0.2 (terrio-clb, 2026-11-02)
+
+Everything in CLB build 0.5.0.1 plus, since tag `gpt-cmdr-v0.5.0.1`:
+
+- Douglas-Peucker simplification on WKB, parallel over features (`terrio.simplify_wkb`,
+  `simplify --method douglas-peucker`, `simplify(..., method="douglas-peucker")`): see *Vector
+  operations* under *Unreleased* below.
+- The Pyodide wheel builds again: the raster and vector index bindings called core functions
+  compiled out on WebAssembly. In Pyodide, index calls on paths and `DatasetIndex.write` now
+  raise a clear error and in-memory indexes work; native builds are unchanged. Backport of the
+  upstream fix; this job failed on the 0.5.0.1 tag, whose release has no Pyodide wheel.
+- Repository only: Dependabot version updates are off in the CLB build.
+
+Wheel version `0.5.0.2`, crate version `0.5.0+gpt-cmdr.2`. Published only as GitHub Release
+assets on CLB-Engineering-Corporation/terrio-clb, never to PyPI, crates.io or npm, whose
+`terrio` names belong to opengeos/terrio:
+
+```
+pip install terrio==0.5.0.2 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2
+```
+
 ## CLB build 0.5.0.1 (terrio-clb, 2026-10-31)
 
 Built from opengeos/terrio 0.5.0 plus the fork's later `main` and the entries under
