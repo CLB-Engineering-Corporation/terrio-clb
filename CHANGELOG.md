@@ -38,6 +38,19 @@ pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corp
 
 ## Unreleased
 
+### CLB build: pure-Rust Zstandard levels
+
+- Pure-Rust Zstandard (builds without the `libzstd` feature, WebAssembly, and Zarr in every
+  build) uses `zstd-rust`, CLB's fork of `ruzstd` with the `Default`, `Better` and `Best`
+  levels, from git (gpt-cmdr/zstd-rs at `6678927`) under the `ruzstd` name. It is not on
+  crates.io. The zstd level maps to the nearest of its four levels: 2 and below `Fastest`, 0
+  and 3 to 5 `Default`, 6 to 9 `Better`, 10 and up `Best`. GeoTIFF/COG ZSTD without `LEVEL`
+  is GDAL's 9, now `Better` (it was `Fastest` whatever the level). Zarr ZSTD stays at level 1
+  (`Fastest`, with the fork's faster-matching encoder). Builds with `libzstd` (the default,
+  and the wheels) write GeoTIFF ZSTD with the C library as before; GeoParquet always does.
+- Repository only: CI checks the crates' package file lists instead of `cargo publish
+  --dry-run`, which refuses a git dependency; terrio-clb publishes no crates.
+
 ### Vector operations
 
 - Douglas-Peucker simplification (GEOS's `DouglasPeuckerSimplifier`, shapely's

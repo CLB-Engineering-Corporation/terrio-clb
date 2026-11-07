@@ -26,10 +26,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # All three crates at once, so terrio-cli is verified against the terrio being released rather
-      # than the version on crates.io.
-      - name: Package and verify terrio-crs, terrio and terrio-cli
-        run: cargo publish --dry-run --locked -p terrio-crs -p terrio -p terrio-cli
+      # CLB build (terrio-clb): the crates depend on `zstd-rust` from git, which `cargo publish`
+      # refuses, and terrio-clb publishes no crates (release.yml). Their file lists are checked,
+      # and the build verified.
+      - name: Package terrio-crs, terrio and terrio-cli (file lists) and build them
+        run: |
+          cargo package --list --locked -p terrio-crs -p terrio -p terrio-cli
+          cargo build --locked -p terrio-crs -p terrio -p terrio-cli
 
   # LICENSE-THIRD-PARTY.md, which the packages ship, lists the dependencies being released.
   licenses:
