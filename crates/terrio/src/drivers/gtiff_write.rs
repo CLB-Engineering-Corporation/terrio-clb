@@ -356,8 +356,9 @@ fn jpeg_encode(data: &[u8], c: &ChunkInfo, quality: u8, ycbcr: bool) -> Result<V
 }
 
 /// Zstandard at `level` (GDAL's default 9 when `None`). Without the zstd C library 9 is `ruzstd`'s
-/// `Better`, which on a 795 MB float32 terrain took 1.9x the time of `Default` for 0.7% less.
-/// The `LEVEL=3` creation option asks for `Default`.
+/// `Better`: a COG of a 795 MB float32 terrain with the floating-point predictor took 4.3x the
+/// time of `Default` for 4.2% less (8.97 s against 2.09 s). The `LEVEL=3` creation option asks
+/// for `Default`.
 fn zstd_at(data: &[u8], level: Option<u8>) -> Result<Vec<u8>> {
     Ok(crate::zstandard::compress(data, level.unwrap_or(9) as i32)?)
 }
