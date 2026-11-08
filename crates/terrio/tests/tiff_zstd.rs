@@ -4,10 +4,10 @@
 //! (`scripts/make_tiff_zstd_fixtures.py`, written by GDAL) has a DEFLATE twin, which the crate
 //! decodes in every build: both read to the same values, or both are refused.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The data type, bands and value bits of a raster, or the error reading it.
-fn read(path: &PathBuf) -> Result<(String, usize, Vec<u64>), String> {
+fn read(path: &Path) -> Result<(String, usize, Vec<u64>), String> {
     let ds = terrio::open_raster(path.to_str().unwrap()).map_err(|e| e.to_string())?;
     let r = &ds.raster;
     let bits = (0..r.bands).flat_map(|b| r.band_view(b).as_slice().iter().map(|v| v.to_bits()).collect::<Vec<_>>()).collect();
