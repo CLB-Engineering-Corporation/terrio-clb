@@ -344,3 +344,122 @@ fn open_sniffs_geoparquet_without_its_extension() {
     assert_eq!(ds.layers[0].len(), 1);
     assert_eq!(ds.layers[0].features[0].geometry, Some(wbvector::Geometry::point(1., 2.)));
 }
+
+/// A varied table for the Zstandard tests: dictionary text, integers, floats and lists with nulls,
+/// and polygons, in two layers, large enough for several pages per chunk and several row groups.
+fn zstd_layers() -> Vec<MemoryLayer> {
+    let make = |name: &str, n: usize, seed: u64| {
+        let note: ArrayRef =
+            Arc::new(StringArray::from_iter((0..n).map(|i| (i % 13 != 0).then(|| format!("note-{}", (i as u64 * seed) % 97)))));
+        let mut l =
+            layer(name, ("note", note), (0..n).map(|i| (i % 101 != 0).then(|| square((i % 400) as f64, (i / 400) as f64, 0.75))).collect());
+        // A float column with nulls, and a list column, appended to the layer's batch.
+        let batch = l.batches.remove(0).unwrap();
+        let values: ArrayRef = Arc::new(Float64Array::from_iter((0..n).map(|i| (i % 7 != 0).then(|| (i as f64 * 0.37).sin() * 1e3))));
+        let lists: ArrayRef = Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(
+            (0..n).map(|i| (i % 5 != 0).then(|| (0..i % 4).map(|k| Some(k as f64 + i as f64)).collect::<Vec<_>>())),
+        ));
+        let mut fields: Vec<Field> = batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+        fields.insert(3, Field::new("value", DataType::Float64, true));
+        fields.insert(4, Field::new_list("items", Field::new_list_field(DataType::Float64, true), true));
+        let schema = Arc::new(Schema::new(fields));
+        let mut columns = batch.columns().to_vec();
+        columns.insert(3, values);
+        columns.insert(4, lists);
+        let batch = RecordBatch::try_new(schema.clone(), columns).unwrap();
+        ArrowLayer::new(Some(name.into()), schema, vec![Ok(batch)]).with_identity(["mesh_name", "cell_id"])
+    };
+    vec![make("cells", 90_000, 31), make("faces", 70_000, 7)]
+}
+
+/// Every page of every column chunk, read (and decompressed) by the `parquet` crate.
+fn pages(bytes: &bytes::Bytes) -> Vec<(String, parquet::basic::PageType, u32, parquet::basic::Encoding, Vec<u8>)> {
+    use parquet::file::serialized_reader::SerializedPageReader;
+    let reader = SerializedFileReader::new(bytes.clone()).unwrap();
+    let mut out = Vec::new();
+    for g in reader.metadata().row_groups() {
+        for c in g.columns() {
+            for page in SerializedPageReader::new(Arc::new(bytes.clone()), c, g.num_rows() as usize, None).unwrap() {
+                let page = page.unwrap();
+                out.push((c.column_path().string(), page.page_type(), page.num_values(), page.encoding(), page.buffer().to_vec()));
+            }
+        }
+    }
+    out
+}
+
+/// The record batches of a file, read by terrio's pure-Rust Zstandard pages.
+fn read_pure(bytes: &bytes::Bytes) -> RecordBatch {
+    use crate::drivers::vector::geoparquet_zstd;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(bytes.clone()).unwrap();
+    let (meta, schema) = (builder.metadata().clone(), builder.schema().clone());
+    let groups: Vec<usize> = (0..meta.num_row_groups()).collect();
+    let mask = parquet::arrow::ProjectionMask::all();
+    assert!(geoparquet_zstd::has_zstd(&meta, &groups, &mask));
+    let reader = geoparquet_zstd::reader(bytes.clone(), &meta, &schema, mask, groups, None, 8192).unwrap();
+    let batches: Vec<RecordBatch> = reader.map(|b| b.unwrap()).collect();
+    arrow_select::concat::concat_batches(&schema, &batches).unwrap()
+}
+
+/// GeoParquet Zstandard pages compressed in pure Rust (`ruzstd`) and by the `parquet` crate (the
+/// zstd C library) make the same file but for the compressed bytes: the same metadata, row groups,
+/// chunk statistics and encodings, and page for page the same decompressed bytes. Each reader
+/// decodes both files to the same table.
+#[test]
+fn pure_rust_zstd_pages_match_the_zstd_c_library_page_for_page() {
+    let options = GeoParquetWriteOptions { row_group_rows: 40_000, ..GeoParquetWriteOptions::archive() };
+    let write = |pure: bool| {
+        let (report, out) = write_layers_with(zstd_layers(), Vec::new(), &options, pure).unwrap();
+        (report, bytes::Bytes::from(out))
+    };
+    let ((pure_report, pure), (c_report, c)) = (write(true), write(false));
+    assert_eq!(pure_report, c_report);
+    assert_ne!(pure, c, "the compressed bytes differ");
+    let (pr, cr) = (SerializedFileReader::new(pure.clone()).unwrap(), SerializedFileReader::new(c.clone()).unwrap());
+    let (pm, cm) = (pr.metadata(), cr.metadata());
+    assert_eq!(pm.file_metadata().key_value_metadata(), cm.file_metadata().key_value_metadata());
+    assert_eq!(pm.file_metadata().schema_descr().root_schema(), cm.file_metadata().schema_descr().root_schema());
+    assert_eq!(pm.num_row_groups(), cm.num_row_groups());
+    assert!(pm.num_row_groups() > 4);
+    for (pg, cg) in pm.row_groups().iter().zip(cm.row_groups()) {
+        assert_eq!(pg.num_rows(), cg.num_rows());
+        for (p, c) in pg.columns().iter().zip(cg.columns()) {
+            let path = p.column_path().string();
+            assert_eq!(p.compression(), c.compression(), "{path}");
+            assert!(matches!(p.compression(), Compression::ZSTD(_)), "{path}");
+            assert_eq!(p.num_values(), c.num_values(), "{path}");
+            assert_eq!(p.encodings_mask(), c.encodings_mask(), "{path}");
+            assert_eq!(p.statistics(), c.statistics(), "{path}");
+            assert_eq!(p.dictionary_page_offset().is_some(), c.dictionary_page_offset().is_some(), "{path}");
+            assert_eq!(p.page_encoding_stats(), c.page_encoding_stats(), "{path}");
+        }
+    }
+    let (pp, cp) = (pages(&pure), pages(&c));
+    assert!(pp.len() > 2 * pm.row_groups().iter().map(|g| g.num_columns()).sum::<usize>(), "several pages per chunk");
+    assert_eq!(pp, cp);
+    // The crate (with the C library) and terrio's pure-Rust pages read both to the same table.
+    let (_, want, _, _) = read(&c);
+    assert_eq!(want.num_rows(), 160_000);
+    assert_eq!(read(&pure).1, want);
+    assert_eq!(read_pure(&pure), want);
+    assert_eq!(read_pure(&c), want);
+}
+
+/// Each level, as terrio maps it (see `zstandard::pure::ruzstd_level`), writes a file the
+/// `parquet` crate reads back.
+#[test]
+fn pure_rust_zstd_levels_round_trip() {
+    let mut sizes = Vec::new();
+    for level in [1, 3, 9, 19] {
+        let options = GeoParquetWriteOptions { compression: ParquetCompression::Zstd(level), ..GeoParquetWriteOptions::archive() };
+        let (_, out) = write_layers_with(vec![zstd_layers().remove(1)], Vec::new(), &options, true).unwrap();
+        let out = bytes::Bytes::from(out);
+        assert_eq!(read(&out).1.num_rows(), 70_000, "level {level}");
+        sizes.push(out.len());
+    }
+    // Higher levels compress no worse.
+    assert!(sizes.windows(2).all(|w| w[1] <= w[0]), "{sizes:?}");
+    // The crate's level range is kept.
+    let options = GeoParquetWriteOptions { compression: ParquetCompression::Zstd(23), ..GeoParquetWriteOptions::archive() };
+    assert!(write_layers_with(zstd_layers(), Vec::new(), &options, true).is_err());
+}

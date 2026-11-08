@@ -41,7 +41,9 @@ flatgeobuf = { version = "6", default-features = false }
 flatbuffers = "=24.12.23"
 # GeoParquet reading and writing. The Arrow major matches ras-commander-fast-hdf's, so its
 # record batches pass to `terrio::geoparquet` without conversion. wbvector's own GeoParquet
-# (parquet 58) is not enabled: terrio has its own driver.
+# (parquet 58) is not enabled: terrio has its own driver. Without the crate's Zstandard (the zstd C
+# library, enabled by terrio's `libzstd` feature only): terrio reads and writes Zstandard pages
+# itself (drivers/vector/geoparquet_zstd.rs).
 parquet = { version = "59", default-features = false, features = ["arrow", "snap"] }
 arrow-array = "59"
 arrow-schema = "59"

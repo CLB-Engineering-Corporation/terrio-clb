@@ -20,7 +20,8 @@
 //!   a 16-bit-per-axis grid over the layer's extent, bit for bit DuckDB spatial's
 //!   `ST_Hilbert(x, y, box)`. Ties keep input order; null and empty geometries go last. The key
 //!   can be stored in a nullable `UInt64` `hilbert_column`.
-//! - **Encoding**: Snappy, ZSTD at a chosen level or none; dictionary encoding on every column,
+//! - **Encoding**: Snappy, ZSTD at a chosen level (in pure Rust, with `ruzstd`, unless the `libzstd`
+//!   feature is on; the files differ only in their compressed bytes) or none; dictionary encoding on every column,
 //!   on top-level `Utf8` columns only, or none; chunk statistics without a page index (as pyarrow
 //!   writes them) or page statistics with one; geometry statistics on or off.
 //!
@@ -109,11 +110,17 @@ impl ParquetCompression {
         }
     }
 
-    fn parquet(self) -> Result<Compression> {
+    /// The codec the `parquet` crate writes with, and the Zstandard level when the pages are
+    /// compressed by terrio instead, with `ruzstd` (`pure`; see `drivers::vector::geoparquet_zstd`).
+    fn parquet(self, pure: bool) -> Result<(Compression, Option<i32>)> {
         Ok(match self {
-            Self::Uncompressed => Compression::UNCOMPRESSED,
-            Self::Snappy => Compression::SNAPPY,
-            Self::Zstd(level) => Compression::ZSTD(ZstdLevel::try_new(level).map_err(arg)?),
+            Self::Uncompressed => (Compression::UNCOMPRESSED, None),
+            Self::Snappy => (Compression::SNAPPY, None),
+            Self::Zstd(level) => {
+                // Refused as the crate refuses it, whichever compresses.
+                let checked = ZstdLevel::try_new(level).map_err(arg)?;
+                if pure { (Compression::UNCOMPRESSED, Some(level)) } else { (Compression::ZSTD(checked), None) }
+            }
         })
     }
 }
@@ -848,6 +855,8 @@ struct RowGroups<W: std::io::Write + Send> {
     factory: ArrowRowGroupWriterFactory,
     schema: SchemaRef,
     limit: usize,
+    /// The Zstandard level, when the pages are compressed by terrio (see `geoparquet_zstd`).
+    zstd: Option<i32>,
     pending: Vec<RecordBatch>,
     rows: usize,
     groups: usize,
@@ -895,9 +904,16 @@ impl<W: std::io::Write + Send> RowGroups<W> {
             }
             writer.close().map_err(err)
         });
+        let chunks = chunks.into_iter().collect::<Result<Vec<_>>>()?;
+        let (root, props) = (self.writer.schema_descr().root_schema_ptr(), self.writer.properties().clone());
         let mut group = self.writer.next_row_group().map_err(err)?;
-        for chunk in chunks {
-            chunk?.append_to_row_group(&mut group).map_err(err)?;
+        match self.zstd {
+            Some(level) => crate::drivers::vector::geoparquet_zstd::append_zstd(chunks, &mut group, root, props, level).map_err(err)?,
+            None => {
+                for chunk in chunks {
+                    chunk.append_to_row_group(&mut group).map_err(err)?;
+                }
+            }
         }
         group.close().map_err(err)?;
         self.groups += 1;
@@ -906,9 +922,9 @@ impl<W: std::io::Write + Send> RowGroups<W> {
     }
 }
 
-fn writer_properties(plan: &Plan, options: &GeoParquetWriteOptions) -> Result<WriterProperties> {
+fn writer_properties(plan: &Plan, options: &GeoParquetWriteOptions, compression: Compression) -> Result<WriterProperties> {
     let mut props = WriterProperties::builder()
-        .set_compression(options.compression.parquet()?)
+        .set_compression(compression)
         .set_max_row_group_row_count(Some(options.row_group_rows))
         // The specification's (and pyarrow's) list layout: three-level LIST, items `element`.
         .set_coerce_types(true);
@@ -973,14 +989,33 @@ where
     write_layers(layers, out, options).map(|(report, _)| report)
 }
 
+/// Whether Zstandard pages are compressed in pure Rust (`ruzstd`), rather than by the `parquet`
+/// crate with the zstd C library (the `libzstd` feature).
+const PURE_ZSTD: bool = !cfg!(feature = "libzstd");
+
 /// [`write_arrow_layers`], returning the output too.
 fn write_layers<I, W>(layers: Vec<ArrowLayer<I>>, out: W, options: &GeoParquetWriteOptions) -> Result<(GeoParquetWriteReport, W)>
 where
     I: IntoIterator<Item = Result<RecordBatch>>,
     W: std::io::Write + Send,
 {
+    write_layers_with(layers, out, options, PURE_ZSTD)
+}
+
+/// [`write_layers`], Zstandard pages compressed in pure Rust or not (`pure_zstd`).
+fn write_layers_with<I, W>(
+    layers: Vec<ArrowLayer<I>>,
+    out: W,
+    options: &GeoParquetWriteOptions,
+    pure_zstd: bool,
+) -> Result<(GeoParquetWriteReport, W)>
+where
+    I: IntoIterator<Item = Result<RecordBatch>>,
+    W: std::io::Write + Send,
+{
     let plan = plan(&layers, options)?;
-    let props = writer_properties(&plan, options)?;
+    let (compression, zstd) = options.compression.parquet(pure_zstd)?;
+    let props = writer_properties(&plan, options, compression)?;
     // pyarrow's root group name (`schema`); the Arrow schema is written at the end, so that it
     // carries the `geo` metadata as pyarrow writes it.
     let arrow = ArrowWriter::try_new_with_options(
@@ -990,8 +1025,16 @@ where
     )
     .map_err(err)?;
     let (writer, factory) = arrow.into_serialized_writer().map_err(err)?;
-    let mut groups =
-        RowGroups { writer, factory, schema: plan.schema.clone(), limit: options.row_group_rows, pending: Vec::new(), rows: 0, groups: 0 };
+    let mut groups = RowGroups {
+        writer,
+        factory,
+        schema: plan.schema.clone(),
+        limit: options.row_group_rows,
+        zstd,
+        pending: Vec::new(),
+        rows: 0,
+        groups: 0,
+    };
     let mut report = GeoParquetWriteReport::default();
     let mut types: Vec<String> = Vec::new();
     let mut extent: Option<[f64; 4]> = None;

@@ -31,7 +31,7 @@ ellipsoid are recorded in the conformance tests.
 | --- | --- | --- |
 | `wbprojection-fallback` | Off | Additional projection methods and legacy identification/WKT fallback |
 | `grid-transport` | Off | Host-provided seekable grid transport, without an HTTP dependency |
-| `libzstd` | On | Zstandard TIFF grids, with the zstd C library |
+| `libzstd` | Off | Zstandard TIFF grids, with the zstd C library (PROJ's grids are DEFLATE-compressed) |
 
 Terrio enables `wbprojection-fallback` to retain its existing projection coverage.
 A method requiring the feature returns an error naming the feature when it is

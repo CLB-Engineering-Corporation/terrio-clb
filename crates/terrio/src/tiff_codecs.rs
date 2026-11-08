@@ -29,7 +29,11 @@ enum Codec {
     Jxl,
     Lzma,
     /// Zstandard, with `ruzstd`: the `tiff` crate decodes it with the `libzstd` feature, natively.
+    /// Float16 and WhiteIsZero samples too, as the crate gives them.
     Zstd,
+    /// Zstandard of unsigned samples of 1 to 7 bits, with `ruzstd`: given packed, each row starting
+    /// on a byte, as the `tiff` crate gives them.
+    ZstdPacked,
     /// LZW of 8 to 64-bit samples, decoded whole: the `tiff` crate's reader fails on some chunks
     /// it reads row by row (edge tiles narrower than the tile).
     Lzw,
@@ -59,6 +63,8 @@ enum Sample {
     I64,
     F32,
     F64,
+    /// Float16, of Zstandard chunks only (the `tiff` crate reads the others).
+    F16,
 }
 
 impl Sample {
@@ -82,14 +88,14 @@ impl Sample {
     fn size(self) -> usize {
         match self {
             Self::U8 | Self::I8 => 1,
-            Self::U16 | Self::I16 => 2,
+            Self::U16 | Self::I16 | Self::F16 => 2,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
         }
     }
 
     fn is_float(self) -> bool {
-        matches!(self, Self::F32 | Self::F64)
+        matches!(self, Self::F16 | Self::F32 | Self::F64)
     }
 }
 
@@ -218,6 +224,10 @@ pub(crate) struct ChunkCodec {
     jpeg_tables: Vec<u8>,
     /// JPEG: the image is coded in YCbCr, to be converted to RGB.
     ycbcr: bool,
+    /// Zstandard: WhiteIsZero samples, inverted as the `tiff` crate inverts them.
+    white_is_zero: bool,
+    /// The image has one sample per pixel (the crate inverts no other WhiteIsZero image).
+    gray: bool,
     /// The most bytes a decoded chunk, or a stream decompressed on the way, may take
     /// ([`crate::TiffReadLimits::chunk_bytes`]).
     limit: usize,
@@ -235,12 +245,14 @@ impl ChunkCodec {
         let extra = dec.find_tag_unsigned_vec::<u16>(Tag::ExtraSamples)?.unwrap_or_default();
         let photometric = dec.find_tag_unsigned::<u16>(Tag::PhotometricInterpretation)?;
         let misread = !planar && crate_misreads_samples(photometric, samples, &extra);
+        let pure_zstd = cfg!(any(target_family = "wasm", not(feature = "libzstd")));
         let codec = match compression {
             _ if (9..32).contains(&packed_bits) && packed_bits != 16 => Codec::Packed(compression),
+            ZSTD if pure_zstd && (1..8).contains(&packed_bits) => Codec::ZstdPacked,
             LERC => Codec::Lerc,
             JXL | JXL_DNG => Codec::Jxl,
             LZMA => Codec::Lzma,
-            ZSTD if cfg!(any(target_family = "wasm", not(feature = "libzstd"))) => Codec::Zstd,
+            ZSTD if pure_zstd => Codec::Zstd,
             5 => Codec::Lzw,
             7 => Codec::Jpeg,
             50001 => Codec::WebP,
@@ -261,9 +273,27 @@ impl ChunkCodec {
         if codec == Codec::Jpeg && bits != 8 {
             return Ok(None);
         }
+        // Zstandard of Float16 or WhiteIsZero samples, decoded here as the `tiff` crate decodes
+        // them with the zstd C library.
+        let zstd_f16 = codec == Codec::Zstd && (format, bits) == (3, 16);
+        let zstd_here = codec == Codec::Zstd && (zstd_f16 || Sample::new(format, bits).is_some());
+        // Packed Zstandard samples: unsigned, without a predictor, of a gray or multiband image,
+        // which are what the `tiff` crate decodes (GDAL writes no other).
+        if codec == Codec::ZstdPacked
+            && (!matches!(format, 1 | 4)
+                || !matches!(photometric, Some(0 | 1))
+                || dec.find_tag_unsigned::<u16>(Tag::Predictor)?.unwrap_or(1) != 1)
+        {
+            return Err(invalid(format!(
+                "TIFF Zstandard samples of {bits} bits (format {format}, photometric {photometric:?}, or with a predictor) are not supported"
+            )));
+        }
         // LZW and Zstandard: other sample types, and WhiteIsZero images (which the crate
         // inverts), are left to the `tiff` crate.
-        if matches!(codec, Codec::Lzw | Codec::Zstd | Codec::Chunky(_)) && (Sample::new(format, bits).is_none() || photometric == Some(0)) {
+        if matches!(codec, Codec::Lzw | Codec::Zstd | Codec::Chunky(_))
+            && !zstd_here
+            && (Sample::new(format, bits).is_none() || photometric == Some(0))
+        {
             // Natively, the crate decodes Zstandard with the `libzstd` feature only.
             #[cfg(not(any(target_family = "wasm", feature = "libzstd")))]
             if codec == Codec::Zstd {
@@ -272,6 +302,8 @@ impl ChunkCodec {
             return Ok(None);
         }
         let sample = match codec {
+            Codec::Zstd if zstd_f16 => Sample::F16,
+            Codec::ZstdPacked => Sample::U8,
             Codec::Packed(_) if format != 1 => {
                 return Err(invalid(format!("TIFF samples of {bits} bits (format {format}) are not supported")));
             }
@@ -314,6 +346,8 @@ impl ChunkCodec {
                 _ => Vec::new(),
             },
             ycbcr: codec == Codec::Jpeg && photometric == Some(6),
+            white_is_zero: matches!(codec, Codec::Zstd | Codec::ZstdPacked) && photometric == Some(0),
+            gray: samples == 1,
             limit,
         }))
     }
@@ -342,6 +376,12 @@ impl ChunkCodec {
             return Err(invalid(format!("TIFF chunk {idx}: {} bytes, {count} expected", raw.len())));
         }
         let bytes = match self.codec {
+            Codec::Zstd if self.white_is_zero => {
+                let mut bytes = self.lossless(raw, w, h)?;
+                self.invert(&mut bytes)?;
+                bytes
+            }
+            Codec::ZstdPacked => return self.zstd_packed(&raw, w, h, dw, dh),
             Codec::Lzma | Codec::Lzw | Codec::Zstd | Codec::Chunky(_) => self.lossless(raw, w, h)?,
             Codec::Lerc => self.lerc(raw, w, h)?,
             Codec::Jxl => self.jxl(&raw, w, h)?,
@@ -358,10 +398,61 @@ impl ChunkCodec {
 
     /// The bytes of `h` rows of `w` pixels of decoded samples.
     fn decoded_size(&self, w: usize, h: usize) -> TiffResult<usize> {
+        if self.codec == Codec::ZstdPacked {
+            return self.packed_row(w).checked_mul(h).ok_or_else(|| invalid("TIFF chunk too large"));
+        }
         w.checked_mul(h)
             .and_then(|n| n.checked_mul(self.spp))
             .and_then(|n| n.checked_mul(self.sample.size()))
             .ok_or_else(|| invalid("TIFF chunk too large"))
+    }
+
+    /// The bytes of a row of `w` pixels of packed samples of fewer than 8 bits.
+    fn packed_row(&self, w: usize) -> usize {
+        (w * self.spp * usize::from(self.bits)).div_ceil(8)
+    }
+
+    /// Decodes a Zstandard chunk of `h` rows of `w` pixels of samples of 1 to 7 bits, keeping its
+    /// `dw` x `dh` image data as the `tiff` crate gives it: packed, each row's bytes as stored
+    /// (starting on a byte), WhiteIsZero samples inverted.
+    fn zstd_packed(&self, raw: &[u8], w: usize, h: usize, dw: usize, dh: usize) -> TiffResult<DecodingResult> {
+        let (row, keep) = (self.packed_row(w), self.packed_row(dw));
+        let out = crate::zstandard::pure::frames(raw, row * h)?;
+        // The crate reads the rows of the image data only.
+        if out.len() < row * dh {
+            return Err(invalid(format!("TIFF chunk decompressed to {} bytes, {} expected", out.len(), row * dh)));
+        }
+        let mut data: Vec<u8> = out.chunks(row).take(dh).flat_map(|r| &r[..keep]).copied().collect();
+        if self.white_is_zero {
+            if !(self.gray && matches!(self.bits, 1 | 2 | 4)) {
+                return Err(TiffError::UnsupportedError(tiff::TiffUnsupportedError::UnknownInterpretation));
+            }
+            data.iter_mut().for_each(|x| *x = !*x);
+        }
+        Ok(DecodingResult::U8(data))
+    }
+
+    /// Inverts WhiteIsZero samples as the `tiff` crate does (`invert_colors`): unsigned integers
+    /// from their maximum, floating-point ones from 1, of one-sample images only.
+    fn invert(&self, data: &mut [u8]) -> TiffResult<()> {
+        macro_rules! each {
+            ($t:ty, $f:expr) => {
+                for c in data.chunks_exact_mut(std::mem::size_of::<$t>()) {
+                    let v = <$t>::from_ne_bytes((&*c).try_into().unwrap());
+                    c.copy_from_slice(&$f(v).to_ne_bytes());
+                }
+            };
+        }
+        match (self.gray, self.sample) {
+            (true, Sample::U8) => data.iter_mut().for_each(|x| *x = !*x),
+            (true, Sample::U16) => each!(u16, |v| u16::MAX - v),
+            (true, Sample::U32) => each!(u32, |v| u32::MAX - v),
+            (true, Sample::U64) => each!(u64, |v| u64::MAX - v),
+            (true, Sample::F32) => each!(f32, |v| 1.0 - v),
+            (true, Sample::F64) => each!(f64, |v| 1.0 - v),
+            _ => return Err(TiffError::UnsupportedError(tiff::TiffUnsupportedError::UnknownInterpretation)),
+        }
+        Ok(())
     }
 
     /// Decodes an LZMA or LZW chunk of `h` rows of `w` pixels into native-endian samples, its
@@ -763,6 +854,7 @@ impl ChunkCodec {
                 Sample::I64 => out.extend((v as i64).to_ne_bytes()),
                 Sample::F32 => out.extend((v as f32).to_ne_bytes()),
                 Sample::F64 => out.extend(v.to_ne_bytes()),
+                Sample::F16 => out.extend(half::f16::from_f64(v).to_ne_bytes()),
             }
         }
         out
@@ -794,6 +886,7 @@ impl ChunkCodec {
             Sample::I64 => typed!(I64, i64),
             Sample::F32 => typed!(F32, f32),
             Sample::F64 => typed!(F64, f64),
+            Sample::F16 => typed!(F16, half::f16),
         }
     }
 }
@@ -1068,6 +1161,8 @@ mod tests {
             lerc_alpha: false,
             jpeg_tables: vec![],
             ycbcr: false,
+            white_is_zero: false,
+            gray: spp == 1,
             limit: usize::MAX,
         }
     }
@@ -1145,6 +1240,8 @@ mod tests {
             lerc_alpha: false,
             jpeg_tables: Vec::new(),
             ycbcr: false,
+            white_is_zero: false,
+            gray: true,
             limit: usize::MAX,
         };
         // 1.5 and -2.0, as byte planes (most significant first), then differenced.
