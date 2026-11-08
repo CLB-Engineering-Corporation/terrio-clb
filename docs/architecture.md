@@ -48,9 +48,14 @@ bytes as a single-threaded run gives. WebAssembly builds run the same code seque
 
 ## Pure Rust
 
-There are no C dependencies apart from the Zstandard codec, which compiles for WebAssembly too
-(the default `libzstd` feature, natively; without it, Zstandard is decoded and written with
-`ruzstd`).
+The default builds (the Python wheels, the command line and the npm package included) compile no
+C codec. Zstandard is decoded and written with `ruzstd` (`zstd-rust`, CLB's fork with the
+`Default`, `Better` and `Best` levels): GeoTIFF/COG chunks, EPT tiles, Zarr chunks and GeoParquet
+pages, which terrio reads and writes itself around the `parquet` crate
+(`drivers::vector::geoparquet_zstd`). The opt-in `libzstd` feature uses the zstd C library instead
+natively, as the default did before CLB build 0.5.0.3: it decodes to the same bytes, and compresses
+a little smaller and, at zstd's levels 6 to 9, faster. The one C dependency left by default is
+`ring`, the cryptography of HTTPS (the `remote` feature, native builds only).
 JPEG 2000 uses a Rust port of OpenJPEG, in WebAssembly too: terrio supplies the C allocator calls
 the port makes. JPEG is decoded by terrio's own decoder, which reproduces libjpeg's arithmetic;
 LERC, JPEG XL and LZMA by pure-Rust crates.

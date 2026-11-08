@@ -38,6 +38,30 @@ pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corp
 
 ## Unreleased
 
+### CLB build: pure-Rust codecs by default
+
+- The `libzstd` feature (the zstd C library) is off by default in terrio and terrio-crs, so the
+  default builds, the Python wheels and the command line included, compile no zstd C code.
+  Zstandard is decoded and written with `zstd-rust` (pure Rust): GeoTIFF/COG chunks, EPT tiles,
+  Zarr chunks and GeoParquet pages. Decoded values are bit-identical to the C library's on Bald
+  Eagle Depth (Max) and Terrain50 COGs (ZSTD, PREDICTOR=3, levels 1, 3 and 9) and Zarr v3 stores,
+  read back by terrio, GDAL 3.12.2 and zarr-python. Pure-Rust COGs are -11% to +0.3% the size of
+  the C library's and take 1.1 to 1.4 times as long to write; full-resolution decoding takes about
+  twice as long. `libzstd` (now also a feature of terrio-cli and of the Python package) restores
+  the C library everywhere, as before.
+- GeoParquet: without `libzstd`, the `parquet` crate is built without its Zstandard, and terrio
+  reads and writes Zstandard pages itself (ported from opengeos/terrio, to parquet 59). Files are
+  the `parquet` crate's but for the compressed bytes: the same metadata, row groups, encodings and
+  statistics, and page for page the same decompressed bytes (tested). ras2cng's archive profile
+  (`write_geoparquet_layers`, `write_hecras_archive`) uses it. Reading Zstandard GeoParquet
+  written by pyarrow is tested on v1 and v2 data pages and per-column codecs.
+- ZSTD GeoTIFFs that the `tiff` crate decoded with the C library, and that terrio left to it, are
+  decoded by terrio without `libzstd`, to the values the crate gives (tested against DEFLATE
+  twins of each file): Float16 samples, unsigned samples of 1 to 7 bits, and WhiteIsZero images.
+  Zstandard datum grids (terrio-crs) still need `libzstd`; PROJ's are DEFLATE-compressed.
+- WebAssembly builds with `parquet` compile no C either. `ring` (HTTPS, the `remote` feature) is
+  the one C dependency left in the native default builds.
+
 ### CLB build: pure-Rust Zstandard levels
 
 - Pure-Rust Zstandard (builds without the `libzstd` feature, WebAssembly, and Zarr in every

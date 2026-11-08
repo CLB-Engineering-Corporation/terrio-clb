@@ -19,6 +19,8 @@ default = []
 gdal = ["terrio/gdal"]
 ## HEC-RAS geometry and plan HDF files (the HECRAS vector driver).
 hecras = ["terrio/hecras"]
+## Zstandard with the zstd C library instead of `ruzstd` (see terrio's `libzstd` feature).
+libzstd = ["terrio/libzstd"]
 
 # The command line as a library (`terrio_cli::run`), which the Python package's `terrio` command
 # runs too.

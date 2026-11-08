@@ -87,6 +87,10 @@ jobs:
       # it, named explicitly so they run when it is left out of the defaults.
       - run: cargo clippy -p terrio -p terrio-cli --all-targets --features hecras -- -D warnings
       - run: cargo test -p terrio -p terrio-cli --features hecras
+      # The opt-in zstd C library (`libzstd`, off by default): its Zstandard paths, and the tests
+      # that compare them with the default pure-Rust ones (GeoParquet pages, ZSTD GeoTIFFs).
+      - run: cargo clippy -p terrio -p terrio-cli --all-targets --features libzstd -- -D warnings
+      - run: cargo test -p terrio --features libzstd --lib --test parquet_zstd --test tiff_zstd --test hecras_archive
 
   gdal:
     name: GDAL backend (feature build)
@@ -245,8 +249,8 @@ jobs:
           cargo check -p terrio-crs --all-features --target wasm32-unknown-unknown
       - name: The core for WebAssembly
         run: cargo build -p terrio --no-default-features --features geotiff --target wasm32-unknown-unknown
-      # Every default feature but GeoParquet (whose Zstandard is the zstd C library) builds for
-      # WebAssembly without a C compiler (#180).
+      # Every default feature builds for WebAssembly without a C compiler (#180), GeoParquet
+      # included: its Zstandard pages are read and written in pure Rust.
       - name: WebAssembly without a C toolchain
         env:
           CC: "false"
@@ -255,7 +259,15 @@ jobs:
           CC_wasm32_unknown_unknown: "false"
         run: >-
           cargo build -p terrio --target wasm32-unknown-unknown --no-default-features
-          --features geotiff,remote,avif,netcdf-hdf5,osm,lzma,flatgeobuf,jp2,lerc,pointcloud,tiles,zarr,sqlite,grib,hecras
+          --features geotiff,cad,parquet,remote,avif,netcdf-hdf5,osm,lzma,flatgeobuf,jp2,lerc,pointcloud,tiles,zarr,sqlite,grib,hecras
+      # The default builds (the wheels, the command line, the npm package) link no zstd C library:
+      # `libzstd` is opt-in. `ring` (HTTPS) is the one C dependency left natively.
+      - name: The default builds pull no zstd C library
+        run: |
+          for p in terrio terrio-cli terrio-py terrio-js; do
+            found=$(cargo tree -p $p -e normal,build --target all --prefix none | cut -d' ' -f1 | sort -u | grep -E '^(zstd|zstd-safe|zstd-sys)$' || true)
+            if [ -n "$found" ]; then echo "$p: unexpected dependencies: $found"; exit 1; fi
+          done
       - name: A GeoTIFF build pulls none of the optional codecs
         run: |
           crates=$(cargo tree -p terrio -e normal --no-default-features --features geotiff --prefix none | cut -d' ' -f1 | sort -u)

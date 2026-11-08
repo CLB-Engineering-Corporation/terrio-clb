@@ -100,7 +100,8 @@ by the settings described below. Direct callers retrieve diagnostics with
 
 The standalone default omits `wbprojection`; Terrio enables the fallback to retain
 its existing coverage. Bundled tables use portable `ruzstd` decompression on all
-targets. TIFF grid codecs retain their previous features, including native Zstd.
+targets. TIFF grid codecs retain their previous features; Zstandard grids need the opt-in
+`libzstd` feature (the zstd C library).
 The [dependency and build measurements](crs-footprint.md) record both standalone
 configurations and full Terrio before/after extraction. Extraction and validation are tracked in
 [#268](https://github.com/opengeos/terrio/issues/268). Capability additions are tracked separately in #269–#272.
