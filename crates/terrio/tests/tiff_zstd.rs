@@ -39,8 +39,13 @@ fn zstd_chunks_read_like_their_deflate_twins() {
         }
     }
     // The crate refuses to invert a two-sample WhiteIsZero image, and decodes no RGB image of
-    // fewer than 8 bits: the same files are refused with either compression.
-    let want = ["miniswhite_u8x2_zstd_strips.tif", "miniswhite_u8x2_zstd_tiled.tif", "u4x3_zstd_strips.tif", "u4x3_zstd_tiled.tif"];
+    // fewer than 8 bits: the same files are refused with either compression. With the `gdal`
+    // feature, GDAL reads what terrio refuses, both files of each pair.
+    let want: &[&str] = if cfg!(feature = "gdal") {
+        &[]
+    } else {
+        &["miniswhite_u8x2_zstd_strips.tif", "miniswhite_u8x2_zstd_tiled.tif", "u4x3_zstd_strips.tif", "u4x3_zstd_tiled.tif"]
+    };
     assert_eq!(refused, want, "{read_ok:?}");
-    assert_eq!(read_ok.len(), 26);
+    assert_eq!(read_ok.len(), 30 - want.len());
 }
