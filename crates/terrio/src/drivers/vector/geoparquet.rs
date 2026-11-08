@@ -10,9 +10,9 @@
 //! types, bounds and CRS.
 
 use super::datetime::{format_date, format_datetime, parse_date, parse_datetime};
+use super::geoparquet_zstd::{self, SharedInput};
 use super::profile::LayerProfile;
 use crate::crs::SpatialRef;
-use super::geoparquet_zstd::{self, SharedInput};
 use crate::{Error, Result};
 use arrow_array::builder::{BinaryBuilder, Float64Builder, StringBuilder};
 use arrow_array::cast::AsArray;

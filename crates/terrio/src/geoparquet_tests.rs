@@ -349,8 +349,10 @@ fn open_sniffs_geoparquet_without_its_extension() {
 /// and polygons, in two layers, large enough for several pages per chunk and several row groups.
 fn zstd_layers() -> Vec<MemoryLayer> {
     let make = |name: &str, n: usize, seed: u64| {
-        let note: ArrayRef = Arc::new(StringArray::from_iter((0..n).map(|i| (i % 13 != 0).then(|| format!("note-{}", (i as u64 * seed) % 97)))));
-        let mut l = layer(name, ("note", note), (0..n).map(|i| (i % 101 != 0).then(|| square((i % 400) as f64, (i / 400) as f64, 0.75))).collect());
+        let note: ArrayRef =
+            Arc::new(StringArray::from_iter((0..n).map(|i| (i % 13 != 0).then(|| format!("note-{}", (i as u64 * seed) % 97)))));
+        let mut l =
+            layer(name, ("note", note), (0..n).map(|i| (i % 101 != 0).then(|| square((i % 400) as f64, (i / 400) as f64, 0.75))).collect());
         // A float column with nulls, and a list column, appended to the layer's batch.
         let batch = l.batches.remove(0).unwrap();
         let values: ArrayRef = Arc::new(Float64Array::from_iter((0..n).map(|i| (i % 7 != 0).then(|| (i as f64 * 0.37).sin() * 1e3))));

@@ -1025,8 +1025,16 @@ where
     )
     .map_err(err)?;
     let (writer, factory) = arrow.into_serialized_writer().map_err(err)?;
-    let mut groups =
-        RowGroups { writer, factory, schema: plan.schema.clone(), limit: options.row_group_rows, zstd, pending: Vec::new(), rows: 0, groups: 0 };
+    let mut groups = RowGroups {
+        writer,
+        factory,
+        schema: plan.schema.clone(),
+        limit: options.row_group_rows,
+        zstd,
+        pending: Vec::new(),
+        rows: 0,
+        groups: 0,
+    };
     let mut report = GeoParquetWriteReport::default();
     let mut types: Vec<String> = Vec::new();
     let mut extent: Option<[f64; 4]> = None;

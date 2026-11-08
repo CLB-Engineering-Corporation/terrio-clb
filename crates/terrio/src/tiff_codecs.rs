@@ -280,7 +280,9 @@ impl ChunkCodec {
         // Packed Zstandard samples: unsigned, without a predictor, of a gray or multiband image,
         // which are what the `tiff` crate decodes (GDAL writes no other).
         if codec == Codec::ZstdPacked
-            && (!matches!(format, 1 | 4) || !matches!(photometric, Some(0 | 1)) || dec.find_tag_unsigned::<u16>(Tag::Predictor)?.unwrap_or(1) != 1)
+            && (!matches!(format, 1 | 4)
+                || !matches!(photometric, Some(0 | 1))
+                || dec.find_tag_unsigned::<u16>(Tag::Predictor)?.unwrap_or(1) != 1)
         {
             return Err(invalid(format!(
                 "TIFF Zstandard samples of {bits} bits (format {format}, photometric {photometric:?}, or with a predictor) are not supported"
