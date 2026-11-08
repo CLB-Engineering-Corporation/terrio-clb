@@ -248,7 +248,7 @@ impl ParquetStream {
         }
         // Zstandard chunks, without the zstd C library: their pages are decompressed by terrio.
         let all = parquet::arrow::ProjectionMask::all();
-        let reader = if !cfg!(feature = "libzstd") && geoparquet_zstd::has_zstd(&meta, &groups, &all) {
+        let reader = if !cfg!(feature = "libzstd-parquet") && geoparquet_zstd::has_zstd(&meta, &groups, &all) {
             geoparquet_zstd::reader(input, &meta, &schema, all, groups, row_selection, batch_size)
         } else {
             let mut builder = builder.with_row_groups(groups).with_batch_size(batch_size.max(1));
@@ -386,7 +386,7 @@ fn select_rows<T: parquet::file::reader::ChunkReader + 'static>(
         p(&ranges)?;
     }
     // Zstandard chunks, without the zstd C library: their pages are decompressed by terrio.
-    let reader = if !cfg!(feature = "libzstd") && geoparquet_zstd::has_zstd(&meta, &groups, &mask) {
+    let reader = if !cfg!(feature = "libzstd-parquet") && geoparquet_zstd::has_zstd(&meta, &groups, &mask) {
         geoparquet_zstd::reader(input, &meta, &schema, mask, groups.clone(), None, 65536)
     } else {
         let src = ParquetRecordBatchReaderBuilder::new_with_metadata(

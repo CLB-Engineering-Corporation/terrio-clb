@@ -118,7 +118,9 @@ the separate native table decoder removes the standalone crate's direct
 `zstd` 0.14 dependency. Native TIFF decoding of Zstandard grids uses the `tiff` crate's Zstd 0.13
 backend, through the opt-in `libzstd` feature (off by default since CLB build 0.5.0.3): without
 it the crate has no C dependency, and a Zstandard grid is not read (PROJ's are DEFLATE-compressed).
-Full Terrio has its own opt-in `libzstd` feature for its formats; by default it uses `ruzstd`.
+Full Terrio chooses per format: its default `libzstd-geotiff` enables the `tiff` crate's Zstandard
+natively (so Full Terrio reads Zstandard grids natively too, the `tiff` crate being shared), and
+EPT, Zarr and GeoParquet use `ruzstd` unless `libzstd` is on.
 
 TIFF grids support Float32/Float64 and Int16/UInt16/Int32/UInt32 samples. Dropping
 codecs based only on Float32 grids would narrow that contract; for example,

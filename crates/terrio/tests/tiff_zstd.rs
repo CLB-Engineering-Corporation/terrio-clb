@@ -1,5 +1,5 @@
 //! Zstandard GeoTIFFs of the layouts the `tiff` crate decodes with the zstd C library (the
-//! `libzstd` feature) and terrio decodes itself without it: Float16 samples (with each predictor),
+//! `libzstd-geotiff` feature, on by default) and terrio decodes itself without it: Float16 samples (with each predictor),
 //! unsigned samples of 1 to 7 bits, and WhiteIsZero images. Each file of `tests/data/tiff_zstd`
 //! (`scripts/make_tiff_zstd_fixtures.py`, written by GDAL) has a DEFLATE twin, which the crate
 //! decodes in every build: both read to the same values, or both are refused.

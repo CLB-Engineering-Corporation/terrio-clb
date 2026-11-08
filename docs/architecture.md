@@ -48,14 +48,22 @@ bytes as a single-threaded run gives. WebAssembly builds run the same code seque
 
 ## Pure Rust
 
-The default builds (the Python wheels, the command line and the npm package included) compile no
-C codec. Zstandard is decoded and written with `ruzstd` (`zstd-rust`, CLB's fork with the
-`Default`, `Better` and `Best` levels): GeoTIFF/COG chunks, EPT tiles, Zarr chunks and GeoParquet
-pages, which terrio reads and writes itself around the `parquet` crate
-(`drivers::vector::geoparquet_zstd`). The opt-in `libzstd` feature uses the zstd C library instead
-natively, as the default did before CLB build 0.5.0.3: it decodes to the same bytes, and compresses
-a little smaller and, at zstd's levels 6 to 9, faster. The one C dependency left by default is
-`ring`, the cryptography of HTTPS (the `remote` feature, native builds only).
+Zstandard is chosen per format. GeoTIFF/COG chunks (ZSTD and LERC_ZSTD, written and read) use the
+zstd C library natively by default (`libzstd-geotiff`, CLB decision 2026-11-08): it writes them
+1.1 to 1.4 times as fast as pure Rust and decodes them about twice as fast, and its files are
+byte-identical to the builds before CLB build 0.5.0.3. EPT tiles, Zarr chunks and GeoParquet pages
+use `ruzstd` (`zstd-rust`, CLB's fork with the `Default`, `Better` and `Best` levels); terrio
+reads and writes GeoParquet pages itself around the `parquet` crate
+(`drivers::vector::geoparquet_zstd`). The opt-in `libzstd-ept` and `libzstd-parquet` features
+(or `libzstd`, all of them) use the C library there too. Without `libzstd-geotiff`
+(`default-features = false`), and in every WebAssembly build, where the feature enables nothing,
+GeoTIFF/COG Zstandard is pure Rust as well: it decodes to the same values, and its files are
+-11% to +0.3% the size of the C library's (Bald Eagle COGs). So the native default builds (the
+Python wheels and the command line) compile two C libraries, zstd (GeoTIFF/COG only) and `ring`,
+the cryptography of HTTPS (the `remote` feature); WebAssembly builds use pure-Rust Zstandard
+everywhere, and the npm package compiles no C. The all-pure-Rust native default is kept on the
+`feat/pure-zstd-geotiff-default` branch, to offer upstream once `ruzstd` matches the C library's
+speed.
 JPEG 2000 uses a Rust port of OpenJPEG, in WebAssembly too: terrio supplies the C allocator calls
 the port makes. JPEG is decoded by terrio's own decoder, which reproduces libjpeg's arithmetic;
 LERC, JPEG XL and LZMA by pure-Rust crates.

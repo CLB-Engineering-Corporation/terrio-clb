@@ -1,5 +1,5 @@
 //! Zstandard column chunks of Parquet files in pure Rust, without the `parquet` crate's Zstandard,
-//! which is the zstd C library (enabled by the `libzstd` feature only, which then reads and writes
+//! which is the zstd C library (enabled by the `libzstd-parquet` feature only, which then reads and writes
 //! them instead). A chunk's pages are read as if they were not compressed, and then decompressed
 //! here with `ruzstd` (`crate::zstandard::pure`). Other compressions stay with the crate.
 //!
