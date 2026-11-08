@@ -55,14 +55,16 @@ quick-xml = "0.42"
 # OpenStreetMap PBF decoding, the version wbvector uses.
 osmpbfreader = "0.19"
 # Its Zstandard (a C library) is enabled by the `libzstd` features of terrio and terrio-crs only:
-# otherwise terrio decodes Zstandard with `ruzstd`.
+# otherwise terrio decodes Zstandard with `ruzstd` (the `zstd-rust` crate).
 tiff = { version = "0.11", features = ["webp"] }
 half = "2"
 flate2 = "1"
 weezl = "0.2"
 png = "0.18"
 lz4_flex = { version = "0.14", default-features = false, features = ["alloc", "safe-decode", "checked-decode"] }
-ruzstd = "0.9"
+# `zstd-rust`, the maintained fork of `ruzstd` with the Default/Better/Best levels, under the
+# `ruzstd` name so the code keeps its `ruzstd::` paths.
+ruzstd = { package = "zstd-rust", git = "https://github.com/gpt-cmdr/zstd-rs", rev = "667892790903fdaba3361787d99df10c0946c22e" }
 netcdf-reader = { version = "0.10.1", default-features = false, features = ["netcdf4"] }
 # The release ras-commander-fast-hdf builds with, so terrio over fast-hdf compiles one HDF5 reader.
 hdf5-reader = { version = "0.10.1", default-features = false }
@@ -168,7 +170,7 @@ jxl-render = { opt-level = 3 }
 jxl-frame = { opt-level = 3 }
 jxl-coding = { opt-level = 3 }
 jxl-grid = { opt-level = 3 }
-ruzstd = { opt-level = 3 }
+zstd-rust = { opt-level = 3 }
 lerc-core = { opt-level = 3 }
 lerc-reader = { opt-level = 3 }
 lerc-writer = { opt-level = 3 }

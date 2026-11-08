@@ -143,8 +143,9 @@ zarr = ["dep:lz4_flex"]
 ## GeoPackage (vector and raster tiles), SQLite/SpatiaLite and the SQLite store of MBTiles.
 sqlite = []
 ## Zstandard (GeoTIFF and EPT tiles) with the zstd C library, natively: it decodes faster and
-## compresses better than `ruzstd`, used without it and in WebAssembly, which writes at its fastest
-## level (about zstd's 1) whatever level is asked for. Without it, natively, ZSTD GeoTIFFs whose
+## compresses a little better than `ruzstd` (the `zstd-rust` crate), used without it and in
+## WebAssembly, which maps zstd's levels to its four (`Fastest`, `Default`, `Better`, `Best`; see
+## `zstandard::pure::ruzstd_level`). Without it, natively, ZSTD GeoTIFFs whose
 ## samples only the `tiff` crate decodes (Float16, 1 to 7 bits, WhiteIsZero) are not read, as in
 ## WebAssembly. In WebAssembly it compiles the C library (as `parquet` does) but does not use it.
 libzstd = ["dep:zstd", "tiff/zstd", "terrio-crs/libzstd"]

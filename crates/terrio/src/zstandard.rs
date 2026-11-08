@@ -1,6 +1,7 @@
 //! Zstandard: with the zstd C library with the `libzstd` feature, in native builds; otherwise
-//! with the pure-Rust `ruzstd`. Both read every frame of a stream (skippable frames skipped), and
-//! each reads what the other writes.
+//! with the pure-Rust `ruzstd` (the `zstd-rust` crate, a maintained fork of `ruzstd` with the
+//! `Default`, `Better` and `Best` levels). Both read every frame of a stream (skippable frames
+//! skipped), and each reads what the other writes.
 
 use std::io::{Error, ErrorKind, Read, Result};
 
@@ -45,11 +46,21 @@ pub(crate) mod pure {
     use super::*;
     use ruzstd::decoding::errors::{FrameDecoderError, ReadFrameHeaderError};
 
-    /// Compresses `data` at `ruzstd`'s fastest level, about zstd's level 1, whatever `level`:
-    /// the only level it implements besides no compression, so the output is larger than the zstd
-    /// C library's at higher levels.
-    pub(crate) fn compress(data: &[u8], _level: i32) -> Result<Vec<u8>> {
-        Ok(ruzstd::encoding::compress_to_vec(data, ruzstd::encoding::CompressionLevel::Fastest))
+    /// Compresses `data` at the `ruzstd` level closest to zstd's `level` (see [`ruzstd_level`]).
+    pub(crate) fn compress(data: &[u8], level: i32) -> Result<Vec<u8>> {
+        Ok(ruzstd::encoding::compress_to_vec(data, ruzstd_level(level)))
+    }
+
+    /// The `ruzstd` level for a zstd level: up to 2 `Fastest` (about zstd 1), 0 (zstd's default)
+    /// and 3 to 5 `Default` (about zstd 3), 6 to 9 `Better`, from 10 on `Best`.
+    pub(crate) fn ruzstd_level(level: i32) -> ruzstd::encoding::CompressionLevel {
+        use ruzstd::encoding::CompressionLevel as L;
+        match level {
+            0 | 3..=5 => L::Default,
+            ..=2 => L::Fastest,
+            6..=9 => L::Better,
+            _ => L::Best,
+        }
     }
 
     /// Decompresses every frame of `data`, to at most `limit` bytes (more is an error).
@@ -132,6 +143,35 @@ mod tests {
         assert_eq!(decompress(&bomb, 64 << 20).unwrap().len(), 64 << 20);
     }
 
+    #[test]
+    fn zstd_levels_map_to_the_nearest_ruzstd_level() {
+        use ruzstd::encoding::CompressionLevel as L;
+        let level = |l| format!("{:?}", pure::ruzstd_level(l));
+        for (zstd, want) in [
+            (i32::MIN, L::Fastest),
+            (-5, L::Fastest),
+            (0, L::Default),
+            (1, L::Fastest),
+            (2, L::Fastest),
+            (3, L::Default),
+            (5, L::Default),
+            (6, L::Better),
+            (9, L::Better),
+            (10, L::Best),
+            (22, L::Best),
+            (i32::MAX, L::Best),
+        ] {
+            assert_eq!(level(zstd), format!("{want:?}"), "zstd level {zstd}");
+        }
+        // Every level round-trips, and compresses.
+        let a = data(300_000, 13);
+        for l in [1, 3, 9, 19] {
+            let c = pure::compress(&a, l).unwrap();
+            assert!(c.len() < a.len() / 4, "level {l}: {} bytes", c.len());
+            assert_eq!(pure::decompress(&c, a.len()).unwrap(), a, "level {l}");
+        }
+    }
+
     /// Each implementation reads what the other writes, frames concatenated across them too.
     #[cfg(all(feature = "libzstd", not(target_family = "wasm")))]
     #[test]
@@ -141,8 +181,11 @@ mod tests {
             let c = libzstd::compress(&a, level).unwrap();
             assert_eq!(pure::decompress(&c, a.len()).unwrap(), a, "level {level}");
         }
-        let p = pure::compress(&a, 9).unwrap();
-        assert_eq!(libzstd::decompress(&p, a.len()).unwrap(), a);
+        // Every `ruzstd` level (Fastest, Default, Better, Best).
+        for level in [1, 3, 9, 19] {
+            let p = pure::compress(&a, level).unwrap();
+            assert_eq!(libzstd::decompress(&p, a.len()).unwrap(), a, "level {level}");
+        }
         let mixed = [libzstd::compress(&a, 9).unwrap(), skippable(3), pure::compress(&b, 9).unwrap()].concat();
         let both = [a, b].concat();
         assert_eq!(pure::decompress(&mixed, both.len()).unwrap(), both);
