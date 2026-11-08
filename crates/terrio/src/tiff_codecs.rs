@@ -1,6 +1,7 @@
 //! TIFF compressions the `tiff` crate does not decode, read as GDAL (libtiff) reads them: LERC
 //! (alone, or wrapped in Deflate or Zstandard), JPEG XL and LZMA, and Zstandard without the
-//! `libzstd` feature (the crate's Zstandard, a C library) and in WebAssembly. And JPEG, decoded as
+//! `libzstd-geotiff` feature (on by default: the crate's Zstandard, a C library) and in
+//! WebAssembly. And JPEG, decoded as
 //! libjpeg decodes it for GDAL ([`crate::jpeg`]), YCbCr converted to RGB. And unsigned samples
 //! packed in 9 to 31 bits (GDAL's `NBITS`, as written for Sentinel-2's 15-bit bands), in any of the
 //! lossless compressions, read as UInt16 or UInt32 as GDAL reads them. And pixel-interleaved RGB or
@@ -28,7 +29,8 @@ enum Codec {
     Lerc,
     Jxl,
     Lzma,
-    /// Zstandard, with `ruzstd`: the `tiff` crate decodes it with the `libzstd` feature, natively.
+    /// Zstandard, with `ruzstd`: the `tiff` crate decodes it with the `libzstd-geotiff` feature
+    /// (the default), natively.
     /// Float16 and WhiteIsZero samples too, as the crate gives them.
     Zstd,
     /// Zstandard of unsigned samples of 1 to 7 bits, with `ruzstd`: given packed, each row starting
@@ -191,7 +193,7 @@ fn invalid(msg: impl Into<String>) -> TiffError {
 }
 
 /// The error of a compression this build leaves out: terrio was built without `feature`.
-#[cfg(not(all(feature = "lerc", feature = "lzma", any(target_family = "wasm", feature = "libzstd"))))]
+#[cfg(not(all(feature = "lerc", feature = "lzma", any(target_family = "wasm", feature = "libzstd-geotiff"))))]
 fn disabled(feature: &str) -> TiffError {
     TiffError::IoError(std::io::Error::new(std::io::ErrorKind::Unsupported, format!("built without the `{feature}` feature")))
 }
@@ -245,7 +247,7 @@ impl ChunkCodec {
         let extra = dec.find_tag_unsigned_vec::<u16>(Tag::ExtraSamples)?.unwrap_or_default();
         let photometric = dec.find_tag_unsigned::<u16>(Tag::PhotometricInterpretation)?;
         let misread = !planar && crate_misreads_samples(photometric, samples, &extra);
-        let pure_zstd = cfg!(any(target_family = "wasm", not(feature = "libzstd")));
+        let pure_zstd = cfg!(any(target_family = "wasm", not(feature = "libzstd-geotiff")));
         let codec = match compression {
             _ if (9..32).contains(&packed_bits) && packed_bits != 16 => Codec::Packed(compression),
             ZSTD if pure_zstd && (1..8).contains(&packed_bits) => Codec::ZstdPacked,
@@ -294,10 +296,10 @@ impl ChunkCodec {
             && !zstd_here
             && (Sample::new(format, bits).is_none() || photometric == Some(0))
         {
-            // Natively, the crate decodes Zstandard with the `libzstd` feature only.
-            #[cfg(not(any(target_family = "wasm", feature = "libzstd")))]
+            // Natively, the crate decodes Zstandard with the `libzstd-geotiff` feature only.
+            #[cfg(not(any(target_family = "wasm", feature = "libzstd-geotiff")))]
             if codec == Codec::Zstd {
-                return Err(disabled("libzstd"));
+                return Err(disabled("libzstd-geotiff"));
             }
             return Ok(None);
         }
@@ -680,10 +682,8 @@ impl ChunkCodec {
         let blob = match self.lerc_wrapper {
             0 => raw,
             1 => inflate(&mut flate2::read::ZlibDecoder::new(&raw[..]))?,
-            2 => {
-                let mut src = &raw[..];
-                inflate(&mut ruzstd::decoding::StreamingDecoder::new(&mut src).map_err(|e| invalid(format!("Zstandard: {e}")))?)?
-            }
+            // The zstd C library with `libzstd-geotiff` (natively), otherwise `ruzstd`.
+            2 => inflate(&mut crate::zstandard::geotiff::stream(&raw).map_err(|e| invalid(e.to_string()))?)?,
             other => return Err(invalid(format!("unknown LERC compression wrapper {other}"))),
         };
         self.lerc_headers(&blob, w, h)?;
@@ -989,7 +989,7 @@ mod tests {
         }
     }
 
-    /// Zstandard chunks decode with `ruzstd` (without the `libzstd` feature, and in WebAssembly),
+    /// Zstandard chunks decode with `ruzstd` (without `libzstd-geotiff`, and in WebAssembly),
     /// whichever encoder wrote them.
     #[test]
     fn zstandard_chunks_decode_in_pure_rust() {
@@ -998,13 +998,13 @@ mod tests {
         let rows: Vec<u8> =
             (0..4u16).flat_map(|r| (0..4u16).map(move |i| if i == 0 { r * 100 } else { 3 })).flat_map(u16::to_ne_bytes).collect();
         let want: Vec<u8> = (0..4u16).flat_map(|r| (0..4u16).map(move |i| r * 100 + 3 * i)).flat_map(u16::to_ne_bytes).collect();
-        assert_eq!(c.lossless(crate::zstandard::compress(&rows, 9).unwrap(), 4, 4).unwrap(), want);
+        assert_eq!(c.lossless(crate::zstandard::geotiff::compress(&rows, 9).unwrap(), 4, 4).unwrap(), want);
         assert_eq!(
             c.lossless(ruzstd::encoding::compress_to_vec(&rows[..], ruzstd::encoding::CompressionLevel::Fastest), 4, 4).unwrap(),
             want
         );
         // A short stream is an error.
-        assert!(c.lossless(crate::zstandard::compress(&rows[..8], 9).unwrap(), 4, 4).is_err());
+        assert!(c.lossless(crate::zstandard::geotiff::compress(&rows[..8], 9).unwrap(), 4, 4).is_err());
     }
 
     /// A truncated LZW chunk is an error, and a header's chunk size overflowing is refused.

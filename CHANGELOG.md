@@ -38,6 +38,29 @@ pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corp
 
 ## Unreleased
 
+### CLB build: the zstd C library for GeoTIFF/COG Zstandard by default
+
+User decision 2026-11-08: keep C as the default for GeoTIFF/COG Zstandard in this fork, and pure
+Rust everywhere else.
+
+- `libzstd` is split per format. **`libzstd-geotiff`** (on by default): GeoTIFF/COG ZSTD and
+  LERC_ZSTD chunks are written and read with the zstd C library natively, the `tiff` crate's
+  Zstandard included, as before #13; COGs are byte-identical to the pre-#13 builds (Bald Eagle
+  Depth (Max) and Terrain50, ZSTD + PREDICTOR=3, levels 1, 3 and 9). `libzstd-ept` (EPT tiles) and
+  `libzstd-parquet` (GeoParquet pages) are off by default, so EPT, Zarr and GeoParquet stay pure
+  Rust as #13 made them. `libzstd` turns on all three, plus terrio-crs's `libzstd`, as before.
+- In WebAssembly `libzstd-geotiff` enables nothing (its C dependencies are native-only), so the
+  default and the npm package still build without a C toolchain, with pure Rust there.
+- Without `libzstd-geotiff` (`default-features = false`) GeoTIFF/COG Zstandard is pure Rust, with
+  #13's decoders for Float16, 1 to 7-bit and WhiteIsZero samples.
+- With `libzstd-geotiff` natively, terrio-crs reads Zstandard datum grids too (the `tiff` crate is
+  shared).
+- CI's dependency check now allows exactly this path in the native default graph (the `zstd` crate
+  and the `tiff` crate's Zstandard, under `libzstd-geotiff`) and none in the WebAssembly graphs.
+- The all-pure-Rust default of #13 is kept on the branch `feat/pure-zstd-geotiff-default`, for an
+  upstream contribution once `zstd-rust` matches the C library's speed: it wrote COGs 1.1 to 1.44
+  times slower and decoded them about 2 times slower (see the next entry).
+
 ### CLB build: pure-Rust codecs by default
 
 - The `libzstd` feature (the zstd C library) is off by default in terrio and terrio-crs, so the

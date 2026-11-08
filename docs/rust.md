@@ -602,6 +602,10 @@ the operations and the streams. The other drivers are features:
 | `pointcloud` | on | LAS, LAZ, COPC, EPT, PLY and E57 (the `pointcloud` module). |
 | `lerc` | on | LERC-compressed GeoTIFFs, read and written. |
 | `lzma` | on | LZMA-compressed GeoTIFFs. |
+| `libzstd-geotiff` | on | GeoTIFF/COG Zstandard (ZSTD, LERC_ZSTD) written and read with the zstd C library, natively (CLB build); without it, and in WebAssembly, with the pure-Rust `zstd-rust`, to the same values. |
+| `libzstd-ept` | off | EPT tiles' Zstandard with the zstd C library, natively (otherwise `zstd-rust`). |
+| `libzstd-parquet` | off | GeoParquet pages with the `parquet` crate's Zstandard, the zstd C library (otherwise terrio's own, with `zstd-rust`). |
+| `libzstd` | off | All three, and terrio-crs's Zstandard datum grids: the C library wherever it has a path. Zarr is pure Rust in every build. |
 | `hecras` | off | HEC-RAS geometry and plan HDF files as vector layers, read only (the `HECRAS` driver and the `hecras` module, through the `ras-commander-fast-hdf` engine; needs `netcdf-hdf5`). See [HEC-RAS](hecras.md). |
 | `gdal` | off | The optional GDAL backend: formats terrio has no driver for, through GDAL (needs GDAL installed). See [the GDAL backend](gdal.md#the-optional-gdal-backend). |
 | `ndarray` | off | Raster pixels as `ndarray` arrays, without copying them: views, owned transfers and the masks of lazy reads, with the crate re-exported as `terrio::ndarray`. See [ndarray](#ndarray). |
@@ -639,9 +643,10 @@ terrio is heading for a stable 1.0 API. What to rely on, and the decisions behin
 ## WebAssembly
 
 The library builds for `wasm32-unknown-unknown`, with any features; network access and
-temporary files are native only. No C compiler is needed, except for the `parquet` feature, whose
-Zstandard codec is the zstd C library (it needs clang for WebAssembly); Zstandard GeoTIFFs are
-decoded in pure Rust there. JPEG 2000 (the `jp2` feature) works there too, with two settings in the program that is built: the global
+temporary files are native only. No C compiler is needed with the default features (`libzstd-geotiff`
+enables nothing in WebAssembly, and GeoParquet's Zstandard pages are pure Rust): Zstandard is
+decoded and written in pure Rust there. Only `libzstd-parquet` (and `libzstd`) compile the zstd C
+library for WebAssembly, which needs clang. JPEG 2000 (the `jp2` feature) works there too, with two settings in the program that is built: the global
 allocator `terrio::NullSafeAllocator` (the OpenJPEG port releases null pointers, which the
 WebAssembly allocator does not tolerate), and the link flag `-C link-arg=--allow-undefined` for
 `wasm32-unknown-unknown`, as in the repository's `.cargo/config.toml` (the port is built as a C

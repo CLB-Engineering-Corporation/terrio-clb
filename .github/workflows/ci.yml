@@ -87,10 +87,18 @@ jobs:
       # it, named explicitly so they run when it is left out of the defaults.
       - run: cargo clippy -p terrio -p terrio-cli --all-targets --features hecras -- -D warnings
       - run: cargo test -p terrio -p terrio-cli --features hecras
-      # The opt-in zstd C library (`libzstd`, off by default): its Zstandard paths, and the tests
-      # that compare them with the default pure-Rust ones (GeoParquet pages, ZSTD GeoTIFFs).
+      # The zstd C library everywhere (`libzstd`: EPT tiles and GeoParquet pages too, opt-in): its
+      # Zstandard paths, and the tests that compare them with the pure-Rust ones (GeoParquet pages).
       - run: cargo clippy -p terrio -p terrio-cli --all-targets --features libzstd -- -D warnings
       - run: cargo test -p terrio --features libzstd --lib --test parquet_zstd --test tiff_zstd --test hecras_archive
+      # No C codec: every default feature but `libzstd-geotiff` (the zstd C library for GeoTIFF/COG,
+      # on by default), so GeoTIFF/COG Zstandard is pure Rust, with terrio's own decoders for the
+      # Float16, 1 to 7-bit and WhiteIsZero ZSTD files the `tiff` crate reads with the C library.
+      - name: Without the zstd C library
+        run: |
+          pure=$(sed -n 's/^default = \[\(.*\)\]$/\1/p' crates/terrio/Cargo.toml | tr -d ' "' | sed 's/,libzstd-geotiff//')
+          cargo clippy -p terrio --all-targets --no-default-features --features "$pure" -- -D warnings
+          cargo test -p terrio --no-default-features --features "$pure" --lib --test tiff_zstd --test parquet_zstd --test hecras_archive --test real_data --test georeferencing --test rgb_extra_samples
 
   gdal:
     name: GDAL backend (feature build)
@@ -249,25 +257,21 @@ jobs:
           cargo check -p terrio-crs --all-features --target wasm32-unknown-unknown
       - name: The core for WebAssembly
         run: cargo build -p terrio --no-default-features --features geotiff --target wasm32-unknown-unknown
-      # Every default feature builds for WebAssembly without a C compiler (#180), GeoParquet
-      # included: its Zstandard pages are read and written in pure Rust.
+      # The default build, every default feature included, builds for WebAssembly without a C
+      # compiler (#180): `libzstd-geotiff` enables nothing there, and GeoParquet's Zstandard pages
+      # are read and written in pure Rust.
       - name: WebAssembly without a C toolchain
         env:
           CC: "false"
           CXX: "false"
           AR: "false"
           CC_wasm32_unknown_unknown: "false"
-        run: >-
-          cargo build -p terrio --target wasm32-unknown-unknown --no-default-features
-          --features geotiff,cad,parquet,remote,avif,netcdf-hdf5,osm,lzma,flatgeobuf,jp2,lerc,pointcloud,tiles,zarr,sqlite,grib,hecras
-      # The default builds (the wheels, the command line, the npm package) link no zstd C library:
-      # `libzstd` is opt-in. `ring` (HTTPS) is the one C dependency left natively.
-      - name: The default builds pull no zstd C library
-        run: |
-          for p in terrio terrio-cli terrio-py terrio-js; do
-            found=$(cargo tree -p $p -e normal,build --target all --prefix none | cut -d' ' -f1 | sort -u | grep -E '^(zstd|zstd-safe|zstd-sys)$' || true)
-            if [ -n "$found" ]; then echo "$p: unexpected dependencies: $found"; exit 1; fi
-          done
+        run: cargo build -p terrio --target wasm32-unknown-unknown
+      # The default builds (the wheels, the command line) link the zstd C library for GeoTIFF/COG
+      # Zstandard only (`libzstd-geotiff`), and the WebAssembly builds (the npm package, Pyodide)
+      # none. `ring` (HTTPS) is the other C dependency, natively.
+      - name: The default builds pull the zstd C library for GeoTIFF/COG only
+        run: bash scripts/check_zstd_graph.sh
       - name: A GeoTIFF build pulls none of the optional codecs
         run: |
           crates=$(cargo tree -p terrio -e normal --no-default-features --features geotiff --prefix none | cut -d' ' -f1 | sort -u)

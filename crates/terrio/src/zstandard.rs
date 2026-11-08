@@ -1,24 +1,47 @@
-//! Zstandard: with the zstd C library with the `libzstd` feature, in native builds; otherwise
-//! with the pure-Rust `ruzstd` (the `zstd-rust` crate, a maintained fork of `ruzstd` with the
-//! `Default`, `Better` and `Best` levels). Both read every frame of a stream (skippable frames
-//! skipped), and each reads what the other writes.
+//! Zstandard, with the zstd C library or the pure-Rust `ruzstd` (the `zstd-rust` crate, a
+//! maintained fork of `ruzstd` with the `Default`, `Better` and `Best` levels), chosen per format,
+//! natively, by the features `libzstd-geotiff` (on by default: GeoTIFF/COG chunks, [`geotiff`])
+//! and `libzstd-ept` (off by default: EPT tiles, [`compress`] and [`decompress`]). WebAssembly
+//! builds always use `ruzstd`. GeoParquet pages (`libzstd-parquet`) are chosen in
+//! `drivers::vector::geoparquet_zstd`; Zarr is `ruzstd` in every build. Both read every frame of a
+//! stream (skippable frames skipped), and each reads what the other writes.
 
 use std::io::{Error, ErrorKind, Read, Result};
 
-// `decompress` reads EPT tiles (the `pointcloud` feature).
-#[cfg(all(feature = "libzstd", not(target_family = "wasm")))]
+// EPT tiles (the `pointcloud` feature).
+#[cfg(all(feature = "libzstd-ept", not(target_family = "wasm")))]
 #[cfg_attr(not(feature = "pointcloud"), allow(unused_imports))]
 pub(crate) use libzstd::{compress, decompress};
-#[cfg(not(all(feature = "libzstd", not(target_family = "wasm"))))]
+#[cfg(not(all(feature = "libzstd-ept", not(target_family = "wasm"))))]
 #[cfg_attr(not(feature = "pointcloud"), allow(unused_imports))]
 pub(crate) use pure::{compress, decompress};
+
+/// GeoTIFF/COG chunks: ZSTD, and the Zstandard wrapping LERC_ZSTD blobs. The zstd C library with
+/// `libzstd-geotiff` (the default), natively; `ruzstd` without it and in WebAssembly. (Lossless
+/// ZSTD chunks are then decoded by the `tiff` crate, which has the C library too; without it by
+/// `tiff_codecs`.)
+pub(crate) mod geotiff {
+    // `stream` reads LERC_ZSTD blobs (the `lerc` feature).
+    #[cfg(all(feature = "libzstd-geotiff", not(target_family = "wasm")))]
+    #[cfg_attr(not(feature = "lerc"), allow(unused_imports))]
+    pub(crate) use super::libzstd::{compress, stream};
+    #[cfg(not(all(feature = "libzstd-geotiff", not(target_family = "wasm"))))]
+    #[cfg_attr(not(feature = "lerc"), allow(unused_imports))]
+    pub(crate) use super::pure::{compress, stream};
+
+    /// Whether this build uses the zstd C library for GeoTIFF/COG chunks.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) const LIBZSTD: bool = cfg!(all(feature = "libzstd-geotiff", not(target_family = "wasm")));
+}
 
 /// The error of a stream decompressing to more than `limit` bytes.
 fn too_long(limit: usize) -> Error {
     Error::new(ErrorKind::InvalidData, format!("Zstandard: decompresses to more than {limit} bytes"))
 }
 
-#[cfg(all(feature = "libzstd", not(target_family = "wasm")))]
+/// The zstd C library: GeoTIFF/COG chunks with `libzstd-geotiff`, EPT tiles with `libzstd-ept`.
+#[cfg(all(any(feature = "libzstd-geotiff", feature = "libzstd-ept"), not(target_family = "wasm")))]
+#[allow(dead_code)] // each function is used by the formats whose feature is on
 mod libzstd {
     use super::*;
 
@@ -29,19 +52,23 @@ mod libzstd {
 
     /// Decompresses every frame of `data`, to at most `limit` bytes (more is an error, rather
     /// than an allocation of whatever a small stream expands to).
-    #[cfg_attr(not(feature = "pointcloud"), allow(dead_code))]
     pub(crate) fn decompress(data: &[u8], limit: usize) -> Result<Vec<u8>> {
         let mut out = Vec::new();
-        zstd::stream::read::Decoder::with_buffer(data)?.take((limit as u64).saturating_add(1)).read_to_end(&mut out)?;
+        stream(data)?.take((limit as u64).saturating_add(1)).read_to_end(&mut out)?;
         if out.len() > limit {
             return Err(too_long(limit));
         }
         Ok(out)
     }
+
+    /// A reader of what `data` decompresses to, frame after frame.
+    pub(crate) fn stream(data: &[u8]) -> Result<impl Read + '_> {
+        zstd::stream::read::Decoder::with_buffer(data)
+    }
 }
 
-/// `ruzstd`, used without `libzstd`, and in WebAssembly.
-#[cfg_attr(all(feature = "libzstd", not(target_family = "wasm")), allow(dead_code))]
+/// `ruzstd`: without the `libzstd-*` features, in WebAssembly, and for Zarr and GeoParquet pages.
+#[allow(dead_code)] // `compress`, `decompress` and `stream` are unused when C has every format
 pub(crate) mod pure {
     use super::*;
     use ruzstd::decoding::errors::{FrameDecoderError, ReadFrameHeaderError};
@@ -64,13 +91,18 @@ pub(crate) mod pure {
     }
 
     /// Decompresses every frame of `data`, to at most `limit` bytes (more is an error).
-    #[cfg_attr(not(feature = "pointcloud"), allow(dead_code))]
     pub(crate) fn decompress(data: &[u8], limit: usize) -> Result<Vec<u8>> {
         let out = frames(data, limit.saturating_add(1))?;
         if out.len() > limit {
             return Err(too_long(limit));
         }
         Ok(out)
+    }
+
+    /// A reader of what the first frame of `data` decompresses to (the LERC_ZSTD blob of a TIFF
+    /// chunk is one frame).
+    pub(crate) fn stream(data: &[u8]) -> Result<impl Read + '_> {
+        ruzstd::decoding::StreamingDecoder::new(data).map_err(|e| Error::new(ErrorKind::InvalidData, format!("Zstandard: {e}")))
     }
 
     /// The first `max` bytes `data` decompresses to, frame after frame (`ruzstd`'s decoder reads
@@ -172,8 +204,31 @@ mod tests {
         }
     }
 
+    /// GeoTIFF/COG chunks are the zstd C library's bytes with `libzstd-geotiff` (natively), as
+    /// before the pure-Rust default, and `ruzstd`'s without it; EPT tiles are `ruzstd`'s without
+    /// `libzstd-ept`. Either decodes through the GeoTIFF reader (LERC_ZSTD blobs).
+    #[test]
+    fn each_format_uses_its_implementation() {
+        let a = data(200_000, 13);
+        for level in [1, 3, 9] {
+            let got = geotiff::compress(&a, level).unwrap();
+            #[cfg(all(feature = "libzstd-geotiff", not(target_family = "wasm")))]
+            assert_eq!(got, zstd::bulk::compress(&a, level).unwrap(), "level {level}");
+            if !geotiff::LIBZSTD {
+                assert_eq!(got, pure::compress(&a, level).unwrap(), "level {level}");
+            }
+            if !cfg!(all(feature = "libzstd-ept", not(target_family = "wasm"))) {
+                assert_eq!(compress(&a, level).unwrap(), pure::compress(&a, level).unwrap(), "level {level}");
+            }
+            let mut back = Vec::new();
+            geotiff::stream(&got).unwrap().read_to_end(&mut back).unwrap();
+            assert_eq!(back, a, "level {level}");
+            assert_eq!(pure::decompress(&got, a.len()).unwrap(), a, "level {level}");
+        }
+    }
+
     /// Each implementation reads what the other writes, frames concatenated across them too.
-    #[cfg(all(feature = "libzstd", not(target_family = "wasm")))]
+    #[cfg(all(any(feature = "libzstd-geotiff", feature = "libzstd-ept"), not(target_family = "wasm")))]
     #[test]
     fn ruzstd_and_libzstd_read_each_other() {
         let (a, b) = (data(200_000, 13), data(50_000, 7));

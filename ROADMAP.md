@@ -429,6 +429,12 @@ WebAssembly (the `terrio-js` npm package):
       in memory). Tested on HEC-RAS 7.0.1 files against h5py, bit for bit
       (`scripts/compare_hecras_with_h5py.py`, the `hecras` conformance suite); older versions best
       effort.
+- [ ] CLB build: pure-Rust GeoTIFF/COG Zstandard by default again, and upstream. The CLB build
+      defaults to the zstd C library for GeoTIFF/COG chunks (`libzstd-geotiff`, decision
+      2026-11-08) because `zstd-rust` wrote Bald Eagle COGs 1.1 to 1.44 times slower and decoded
+      them about 2 times slower, at -11% to +0.3% the size. The all-pure default (the #13 state) is
+      on terrio-clb's branch `feat/pure-zstd-geotiff-default`; offer it upstream, and make it the
+      default here, once `zstd-rust` matches libzstd's write and decode speed on those files.
 - [ ] HEC-RAS files read in place over HTTP and S3 by range requests: needs an engine byte-source
       interface (plan the ranges from the HDF5 metadata, fetch them, then decode, as
       `sparse::SparseFile` reads).

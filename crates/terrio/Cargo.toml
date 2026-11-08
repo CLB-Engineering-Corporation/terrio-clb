@@ -89,10 +89,12 @@ ndarray = { workspace = true, optional = true }
 # and COG (deflate, LZW, PackBits, ZSTD, WebP, JPEG, JPEG XL), the raw and ASCII rasters (AAIGrid,
 # EHdr, ENVI, ERS, HFA, RST, SAGA, GSBG, XYZ...), PNG, JPEG, VRT, GeoJSON, Shapefile, KML/KMZ,
 # GML, GPX, CSV, MapInfo, the CRS engine and the operations, without C (Zstandard with `ruzstd`).
+# The defaults compile one C library natively: zstd, for GeoTIFF/COG Zstandard only
+# (`libzstd-geotiff`); WebAssembly builds compile none.
 # Disabled drivers stay in the API (`RasterDriver`, `VectorDriver`) and fail with "built without
 # the `...` feature".
 [features]
-default = ["cad", "geotiff", "parquet", "remote", "avif", "netcdf-hdf5", "osm", "lzma", "flatgeobuf", "jp2", "lerc", "pointcloud", "tiles", "zarr", "sqlite", "grib", "hecras"]
+default = ["cad", "geotiff", "parquet", "remote", "avif", "netcdf-hdf5", "osm", "lzma", "flatgeobuf", "jp2", "lerc", "pointcloud", "tiles", "zarr", "sqlite", "grib", "hecras", "libzstd-geotiff"]
 ## GeoTIFF and COG reading and writing. Always built (it is the core): the feature exists so that
 ## `features = ["geotiff"]` states what a build needs.
 geotiff = []
@@ -100,7 +102,7 @@ geotiff = []
 cad = ["dep:acadrust"]
 ## GeoParquet (the `geoparquet` module of Arrow layers included), the `arrow` module and Arrow
 ## streams of vector layers. Zstandard pages are read and written by terrio with `ruzstd`
-## (`drivers::vector::geoparquet_zstd`), unless `libzstd` is on.
+## (`drivers::vector::geoparquet_zstd`), unless `libzstd-parquet` is on.
 parquet = [
     "dep:parquet",
     "dep:arrow-array",
@@ -142,14 +144,25 @@ tiles = ["sqlite"]
 zarr = ["dep:lz4_flex"]
 ## GeoPackage (vector and raster tiles), SQLite/SpatiaLite and the SQLite store of MBTiles.
 sqlite = []
-## Zstandard with the zstd C library instead of the pure-Rust `ruzstd` (the `zstd-rust` crate),
-## natively: GeoTIFF/COG chunks, EPT tiles and, with `parquet`, GeoParquet pages (the `parquet`
-## crate's own codec). Off by default: the default builds have no C dependency. Both read what the
-## other writes, and decode to the same bytes; the C library compresses a little smaller, and is
-## faster at zstd's levels 6 to 9 (GDAL's GeoTIFF default is 9). Without it, `ruzstd` maps zstd's
-## levels to its four (`Fastest`, `Default`, `Better`, `Best`; see `zstandard::pure::ruzstd_level`).
-## In WebAssembly it compiles the C library but does not use it for GeoTIFF or EPT.
-libzstd = ["dep:zstd", "tiff/zstd", "terrio-crs/libzstd", "parquet?/zstd"]
+## Zstandard of GeoTIFF/COG chunks (ZSTD and LERC_ZSTD, written and read) with the zstd C library,
+## natively. **On by default** (user decision 2026-11-08): the C library writes these files 1.1 to
+## 1.4 times as fast as `ruzstd` (the `zstd-rust` crate) and decodes them about twice as fast, and
+## its files are byte-identical to terrio's before the pure-Rust default (#13). Without it, and in
+## WebAssembly (where it enables nothing, so no C toolchain is needed), terrio writes and decodes
+## these chunks with `ruzstd`, Float16, 1 to 7-bit and WhiteIsZero samples included
+## (`tiff_codecs`); both read what the other writes, to the same values. The all-pure-Rust default
+## is kept on the `feat/pure-zstd-geotiff-default` branch. Natively it also lets terrio-crs read
+## Zstandard datum grids (the two share the `tiff` crate).
+libzstd-geotiff = ["dep:zstd", "dep:tiff"]
+## EPT tiles' Zstandard with the zstd C library, natively. Off by default (`ruzstd`).
+libzstd-ept = ["dep:zstd"]
+## GeoParquet pages with the `parquet` crate's own Zstandard (the zstd C library). Off by default:
+## terrio reads and writes Zstandard pages with `ruzstd` (`drivers::vector::geoparquet_zstd`).
+## Zarr's Zstandard is pure Rust in every build.
+libzstd-parquet = ["parquet?/zstd"]
+## The zstd C library for every Zstandard path that has one, as before #13: GeoTIFF/COG, EPT,
+## GeoParquet and terrio-crs's datum grids (in WebAssembly too, for the last two).
+libzstd = ["libzstd-geotiff", "libzstd-ept", "libzstd-parquet", "terrio-crs/libzstd"]
 ## Open any format GDAL reads, through the same data model, when terrio has no driver for it.
 gdal = ["dep:gdal", "dep:gdal-sys"]
 ## Raster pixels as `ndarray` arrays without copying them: borrowed and mutable views, owned
@@ -158,9 +171,13 @@ gdal = ["dep:gdal", "dep:gdal-sys"]
 ndarray = ["dep:ndarray"]
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-# `libzstd`: EPT tiles' Zstandard, natively (without it, and in WebAssembly, `ruzstd`).
 memmap2.workspace = true
+# `libzstd-geotiff` and `libzstd-ept`: the zstd C library, natively (without them, and in
+# WebAssembly, `ruzstd`).
 zstd = { workspace = true, optional = true }
+# `libzstd-geotiff`: the `tiff` crate's own Zstandard decoding (the zstd C library), natively only.
+# The same `tiff` as above; declared here as well so that the feature cannot reach WebAssembly.
+tiff = { workspace = true, features = ["zstd"], optional = true }
 tempfile.workspace = true
 # Listing and extracting tar archives (`terrio::vsi`).
 tar.workspace = true

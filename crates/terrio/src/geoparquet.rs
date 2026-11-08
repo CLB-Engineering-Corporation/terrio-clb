@@ -20,8 +20,8 @@
 //!   a 16-bit-per-axis grid over the layer's extent, bit for bit DuckDB spatial's
 //!   `ST_Hilbert(x, y, box)`. Ties keep input order; null and empty geometries go last. The key
 //!   can be stored in a nullable `UInt64` `hilbert_column`.
-//! - **Encoding**: Snappy, ZSTD at a chosen level (in pure Rust, with `ruzstd`, unless the `libzstd`
-//!   feature is on; the files differ only in their compressed bytes) or none; dictionary encoding on every column,
+//! - **Encoding**: Snappy, ZSTD at a chosen level (in pure Rust, with `ruzstd`, unless the
+//!   `libzstd-parquet` feature is on; the files differ only in their compressed bytes) or none; dictionary encoding on every column,
 //!   on top-level `Utf8` columns only, or none; chunk statistics without a page index (as pyarrow
 //!   writes them) or page statistics with one; geometry statistics on or off.
 //!
@@ -990,8 +990,8 @@ where
 }
 
 /// Whether Zstandard pages are compressed in pure Rust (`ruzstd`), rather than by the `parquet`
-/// crate with the zstd C library (the `libzstd` feature).
-const PURE_ZSTD: bool = !cfg!(feature = "libzstd");
+/// crate with the zstd C library (the `libzstd-parquet` feature, off by default).
+const PURE_ZSTD: bool = !cfg!(feature = "libzstd-parquet");
 
 /// [`write_arrow_layers`], returning the output too.
 fn write_layers<I, W>(layers: Vec<ArrowLayer<I>>, out: W, options: &GeoParquetWriteOptions) -> Result<(GeoParquetWriteReport, W)>
