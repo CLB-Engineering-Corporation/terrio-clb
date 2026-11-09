@@ -270,7 +270,7 @@ CI saves dependency caches for PR updates as well as main, disables incremental
 compilation, and cancels obsolete runs when a PR receives a newer push. Release
 profiles and the full validation matrix are unchanged.
 
-Every push to main runs every job. Pull requests skip the slowest ones unless
+Every push to main runs every job except macOS. Pull requests skip the slowest ones unless
 asked for them:
 
 | Job | Pull requests |
@@ -278,7 +278,8 @@ asked for them:
 | real data vs GDAL (`ci.yml`) | Skipped only when every changed path (renamed-from paths included) is under `docs/` or `site/`, a root-level Markdown file, `js/` (except its Rust code and `Cargo.toml`), `packaging/`, or `.github/` (except `ci.yml`), or is one of `zensical.toml`, `requirements_docs.txt`, `CITATION.cff`, `about.hbs` or `about.toml`; a PR listing 3000 or more paths always runs |
 | npm package (`ci-extended.yml`) | Label `ci:npm` or `ci:all`; the `wasm` job tests the Node.js package on every PR |
 | point clouds and conformance vs GDAL (`ci-extended.yml`) | Label `ci:conformance` or `ci:all` |
-| macOS and Windows (`ci-platforms.yml`) | Label `ci:macos`, `ci:windows` or `ci:all` |
+| Windows (`ci-platforms.yml`) | Label `ci:windows` or `ci:all` |
+| macOS (`ci-platforms.yml`) | Label `ci:macos` only (`ci:all` does not include it); never on a push to main |
 
 A label starts its jobs when added and reruns them on each push while it stays.
 `ci-extended.yml` and `ci-platforms.yml` can also be run by hand from GitHub

@@ -60,8 +60,8 @@ jobs:
             echo "Real-data job skipped: no file it depends on changed."
           fi
 
-  # Linux only: macOS and Windows run in ci-platforms.yml, on every push to main and, for pull
-  # requests, by hand or with the label ci:macos, ci:windows or ci:all.
+  # Linux only: Windows runs in ci-platforms.yml, on every push to main and, for pull requests, by
+  # hand or with the label ci:windows or ci:all. macOS runs there only by hand or with ci:macos.
   # The npm package and the conformance report run in ci-extended.yml, on the same terms (labels
   # ci:npm, ci:conformance or ci:all).
   check:
