@@ -9,7 +9,7 @@ LICENSE-THIRD-PARTY.md`, from `about.toml`.
 
 ## Overview
 
-- Apache License 2.0 (267)
+- Apache License 2.0 (269)
 - MIT License (75)
 - ISC License (20)
 - BSD 3-Clause "New" or "Revised" License (13)
@@ -6703,7 +6703,9 @@ Used by:
 - [geozero 0.15.1](https://github.com/georust/geozero)
 - [half 2.7.1](https://github.com/VoidStarKat/half-rs)
 - [hdf5-core 0.10.1](https://github.com/roteiro-gis/netcdf-rust)
+- [hdf5-core 0.12.1](https://github.com/roteiro-gis/netcdf-rust)
 - [hdf5-reader 0.10.1](https://github.com/roteiro-gis/netcdf-rust)
+- [hdf5-reader 0.12.1](https://github.com/roteiro-gis/netcdf-rust)
 - [i_overlay 4.5.2](https://github.com/iShape-Rust/iOverlay)
 - [image-webp 0.2.4](https://github.com/image-rs/image-webp)
 - [itoa 1.0.18](https://github.com/dtolnay/itoa)
@@ -8644,7 +8646,7 @@ THIS SOFTWARE.
 
 Used by:
 
-- [ras-commander-fast-hdf 0.3.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
+- [ras-commander-fast-hdf 0.5.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
 
 ```text
 Supercluster 8.0.1: ISC License
@@ -8673,7 +8675,7 @@ THIS SOFTWARE.
 
 Used by:
 
-- [ras-commander-fast-hdf 0.3.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
+- [ras-commander-fast-hdf 0.5.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
 
 ```text
 # MIT License
@@ -9547,7 +9549,7 @@ SOFTWARE.
 
 Used by:
 
-- [ras-commander-fast-hdf 0.3.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
+- [ras-commander-fast-hdf 0.5.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
 
 ```text
 MIT License
@@ -9777,7 +9779,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- [ras-commander-fast-hdf 0.3.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
+- [ras-commander-fast-hdf 0.5.0](https://github.com/gpt-cmdr/ras-commander-fast-hdf)
 
 ```text
 MIT License

@@ -1,5 +1,32 @@
 # Changelog
 
+## CLB build 0.5.0.4 (terrio-clb, 2026-11-09)
+
+Everything in CLB build 0.5.0.3 plus, since tag `gpt-cmdr-v0.5.0.3`:
+
+- **ras-commander-fast-hdf 0.5.0** (was 0.3.0). It reads 2D summary variables stored without a
+  `Location` attribute, as HEC-RAS 5.0.x and 6.1 plan files store them, so the HECRAS driver,
+  `hecras_archive_layers` and `write_hecras_archive` read those summaries natively instead of
+  refusing them (Spring p01 and Spring_BLE p02 in the comparison corpus). The engine builds with
+  `hdf5-reader` 0.12.1 while terrio's NetCDF and HDF5 drivers stay on 0.10.1, so a build with
+  `hecras` now compiles two HDF5 readers (see *HDF5 readers* in `docs/hecras.md`).
+- **Degenerate breaklines are left out, not the whole layer** (#17): a breakline with fewer than
+  two points is skipped and listed in the new `omitted` key of `hecras_archive_layers` and
+  `write_hecras_archive` (details under *Unreleased* below).
+- **gdalwarp's `-wm`** (#16): `terrio warp --wm`, Python `terrio.warp(..., wm=)` and
+  JavaScript `warp(src, { wm })` (details under *Unreleased* below).
+- HTTPS stays on `rustls` with `ring` in every native build; this build has never linked
+  `graviola` (CLB-Engineering-Corporation/terrio #37 moved CLB terrio to the same provider).
+- Repository only: macOS CI runs only on request, not on pushes (#18).
+
+Wheel version `0.5.0.4`, crate version `0.5.0+gpt-cmdr.4`. Published only as GitHub Release
+assets on CLB-Engineering-Corporation/terrio-clb, never to PyPI, crates.io or npm, whose
+`terrio` names belong to opengeos/terrio:
+
+```
+pip install terrio==0.5.0.4 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.4
+```
+
 ## CLB build 0.5.0.3 (terrio-clb, 2026-11-08)
 
 Everything in CLB build 0.5.0.2 plus, since tag `gpt-cmdr-v0.5.0.2`, the Zstandard work of

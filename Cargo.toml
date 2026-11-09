@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "python", "js"]
 
 [workspace.package]
-version = "0.5.0+gpt-cmdr.3"
+version = "0.5.0+gpt-cmdr.4"
 edition = "2024"
 license = "MIT"
 rust-version = "1.90"
@@ -68,12 +68,15 @@ lz4_flex = { version = "0.14", default-features = false, features = ["alloc", "s
 # `ruzstd` name so the code keeps its `ruzstd::` paths.
 ruzstd = { package = "zstd-rust", git = "https://github.com/gpt-cmdr/zstd-rs", rev = "667892790903fdaba3361787d99df10c0946c22e" }
 netcdf-reader = { version = "0.10.1", default-features = false, features = ["netcdf4"] }
-# The release ras-commander-fast-hdf builds with, so terrio over fast-hdf compiles one HDF5 reader.
+# terrio's own HDF5 reader. ras-commander-fast-hdf 0.5.0 builds with hdf5-reader 0.12, so a build
+# with `hecras` compiles both until terrio moves to 0.12 (netcdf-reader 0.12 decodes compound and
+# opaque attribute values, which terrio's NetCDF drivers do not handle yet).
 hdf5-reader = { version = "0.10.1", default-features = false }
 # HEC-RAS geometry and plan HDF files (the `hecras` feature): the read-only engine behind
 # ras-commander. It owns every HEC-RAS rule, layer name and field name (its Arrow layer catalog);
-# terrio's driver only translates its values. 0.3.0 is the first release with the Arrow layer API.
-ras-commander-fast-hdf = { version = "0.3.0", default-features = false, features = ["hdf", "mesh", "results"] }
+# terrio's driver only translates its values. 0.3.0 is the first release with the Arrow layer API;
+# 0.5.0 reads 2D summaries stored without a `Location` (HEC-RAS 5.0.x and 6.1 plan files).
+ras-commander-fast-hdf = { version = "0.5.0", default-features = false, features = ["hdf", "mesh", "results"] }
 # The portable decoder: the same pixels on every platform, closer to libjpeg's than its SIMD paths.
 jpeg-decoder = { version = "0.3", default-features = false, features = ["platform_independent"] }
 # GeoPackage JPEG tiles; the version wbraster already uses.

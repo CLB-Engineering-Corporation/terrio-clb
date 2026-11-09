@@ -274,13 +274,16 @@ the engine; its other dependencies, including the HDF5 reader, are already terri
 
 The Python package and the JavaScript package's full module include it.
 
-### One HDF5 reader
+### HDF5 readers
 
-terrio and the engine use the same `hdf5-reader` 0.10 from crates.io (roteiro-gis/netcdf-rust),
-so a build with `hecras` compiles one HDF5 reader. The engine adds its own read policy on top
-(refusing filters without an encoded-size bound as intermediate decoding stages) instead of
-patching the reader. `cargo tree -d -e normal -p terrio --features hecras` lists the same
-duplicate crates as a build without `hecras`, and none of them is an HDF5 or NetCDF crate.
+terrio and the engine both read HDF5 with `hdf5-reader` from crates.io
+(roteiro-gis/netcdf-rust). The engine adds its own read policy on top (refusing filters without
+an encoded-size bound as intermediate decoding stages) instead of patching the reader. Since the
+engine moved to ras-commander-fast-hdf 0.5.0, it builds with `hdf5-reader` 0.12 while terrio's
+NetCDF and HDF5 drivers stay on 0.10, so a build with `hecras` compiles two HDF5 readers
+(`hdf5-reader` and `hdf5-core`, 0.10.1 and 0.12.1). They become one again when terrio moves to
+`netcdf-reader`/`hdf5-reader` 0.12, whose NetCDF-4 reader decodes compound and opaque attribute
+values that terrio's NetCDF drivers do not handle yet.
 
 ## Testing
 
