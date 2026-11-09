@@ -1,5 +1,29 @@
 # Changelog
 
+## CLB build 0.5.0.3 (terrio-clb, 2026-11-08)
+
+Everything in CLB build 0.5.0.2 plus, since tag `gpt-cmdr-v0.5.0.2`, the Zstandard work of
+#12, #13 and #14 (details under *Unreleased* below):
+
+- **GeoTIFF/COG ZSTD and LERC_ZSTD keep the zstd C library** (`libzstd-geotiff`, on by
+  default; #14). COGs are byte-identical to 0.5.0.2's (Bald Eagle Depth (Max) and Terrain50,
+  ZSTD + PREDICTOR=3 at levels 1, 3 and 9, and LERC_ZSTD).
+- **GeoParquet, Zarr and EPT Zstandard are pure Rust** (#13), through `zstd-rust`, CLB's fork of
+  `ruzstd` with the `Default`, `Better` and `Best` levels (#12; from git, gpt-cmdr/zstd-rs at
+  `6678927`). GeoParquet files written by `write_geoparquet_layers` and `write_hecras_archive`
+  hold the same rows, schema, row groups and metadata as before; only the compressed page
+  bytes differ. `libzstd-parquet`, `libzstd-ept` or `libzstd` restore the C library there.
+- WebAssembly builds, the npm package included, compile no zstd C code.
+- The all-pure-Rust default of #13 is kept on the branch `feat/pure-zstd-geotiff-default`.
+
+Wheel version `0.5.0.3`, crate version `0.5.0+gpt-cmdr.3`. Published only as GitHub Release
+assets on CLB-Engineering-Corporation/terrio-clb, never to PyPI, crates.io or npm, whose
+`terrio` names belong to opengeos/terrio:
+
+```
+pip install terrio==0.5.0.3 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3
+```
+
 ## CLB build 0.5.0.2 (terrio-clb, 2026-11-02)
 
 Everything in CLB build 0.5.0.1 plus, since tag `gpt-cmdr-v0.5.0.1`:
