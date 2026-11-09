@@ -260,7 +260,7 @@ fn xy(values: &NumericValues, shape: &[u64]) -> Result<Vec<[f64; 2]>> {
         NumericValues::F32(v) => v.iter().map(|&x| f64::from(x)).collect(),
         _ => return Err(refuse(UnsupportedCode::Encoding, format!("{LAYER}: coordinates are not f32/f64"))),
     };
-    Ok(flat.chunks_exact(2).map(|p| [p[0], p[1]]).collect())
+    Ok(flat.as_chunks::<2>().0.to_vec())
 }
 
 /// The engine's line WKB for a feature of at least two points: one part a LineString, several a

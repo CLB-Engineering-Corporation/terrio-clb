@@ -123,7 +123,7 @@ netcdf-hdf5 = ["dep:netcdf-reader", "dep:hdf5-reader"]
 ## direct HEC-RAS HDF to archive GeoParquet path (`hecras::archive`).
 ## Needs `netcdf-hdf5`: HEC-RAS files stay readable as HDF5 rasters, and in-memory opens find
 ## the root `File Type` with terrio's HDF5 reader.
-hecras = ["netcdf-hdf5", "dep:ras-commander-fast-hdf", "ras-commander-fast-hdf/arrow", "dep:arrow-array", "dep:arrow-schema"]
+hecras = ["netcdf-hdf5", "dep:ras-commander-fast-hdf", "ras-commander-fast-hdf/arrow", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-select"]
 ## OpenStreetMap PBF and XML.
 osm = ["dep:osmpbfreader", "wbvector/osmpbf"]
 ## LZMA-compressed GeoTIFFs.

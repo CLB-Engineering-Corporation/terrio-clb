@@ -99,7 +99,7 @@ pub(crate) fn rows_of(
             None => None,
         };
         for row in 0..batch.num_rows() {
-            let values = arrays.iter().map(|a| value(a.as_ref(), row, &name)).collect::<crate::Result<Vec<_>>>()?;
+            let values = arrays.iter().map(|a| value(a.as_ref(), row, name)).collect::<crate::Result<Vec<_>>>()?;
             let geometry = match wkb {
                 Some(w) if !w.is_null(row) => Some(
                     decode_wkb(w.value(row))
