@@ -85,6 +85,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -343,6 +350,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
@@ -430,6 +444,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
