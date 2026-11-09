@@ -26,6 +26,10 @@ env:
   # CI restores dependencies; per-checkout incremental state is larger and not reused.
   CARGO_INCREMENTAL: 0
 
+# Runners: the conformance job runs on CLB's self-hosted Slurm runners (clb-ci-linux); pull
+# requests from forks fall back to GitHub-hosted runners, so they never reach a self-hosted
+# runner. The job picker stays GitHub-hosted (a few seconds, no checkout: it should not wait for a
+# busy self-hosted runner), and so does the npm job (below).
 jobs:
   # The jobs the labels or the manual run ask for.
   pick:
@@ -67,6 +71,8 @@ jobs:
     concurrency:
       group: ci-extended-npm-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    # GitHub-hosted: it installs clang 20 and Playwright's browser dependencies with root apt,
+    # which the self-hosted runner (a container without root) cannot.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -146,7 +152,7 @@ jobs:
     concurrency:
       group: ci-extended-conformance-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

@@ -17,11 +17,16 @@ env:
   # CI restores dependencies; per-checkout incremental state is larger and not reused.
   CARGO_INCREMENTAL: 0
 
+# Runners: CLB's self-hosted Slurm runners (clb-ci-linux) for every build and test job, except
+# where noted; pull requests from forks fall back to GitHub-hosted runners, so they never reach a
+# self-hosted runner. The self-hosted Linux runner is a container without root (no sudo, no
+# Docker) and without the gh CLI.
 jobs:
   # Whether the real-data job runs: on every push to main, and for pull requests unless they
   # change only documentation, the npm package's JavaScript (js/, tested by the wasm job) or
   # other workflows. When the file list is unavailable, it runs.
   changes:
+    # GitHub-hosted: it calls the gh CLI, which the self-hosted image does not have.
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
@@ -66,11 +71,15 @@ jobs:
   # ci:npm, ci:conformance or ci:all).
   check:
     name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests -> GitHub-hosted matrix.os; otherwise the self-hosted labels.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && format('["{0}"]', matrix.os) || matrix.self_hosted || format('["{0}"]', matrix.os)) }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        include:
+          - os: ubuntu-latest
+            self_hosted: '["self-hosted", "Linux", "X64", "clb-ci-linux"]'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -102,7 +111,7 @@ jobs:
 
   gdal:
     name: GDAL backend (feature build)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -130,7 +139,7 @@ jobs:
 
   msrv:
     name: MSRV (Rust 1.90)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       # The `rust-version` of Cargo.toml: keep the two in step. It is an input, not the action's ref,
@@ -145,7 +154,7 @@ jobs:
 
   api-docs:
     name: API docs and packaging
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -176,10 +185,14 @@ jobs:
         run: |
           for f in python/LICENSE crates/terrio/LICENSE crates/terrio-cli/LICENSE crates/terrio-crs/LICENSE; do cmp LICENSE "$f"; done
           cmp NOTICE crates/terrio/NOTICE
+      # The self-hosted image has uv but not pipx.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
       - name: The Python sdist carries the license
         working-directory: python
         run: |
-          pipx run maturin sdist --out dist
+          uvx maturin sdist --out dist
           tar tzf dist/*.tar.gz > sdist.list
           grep -qx '[^/]*/python/LICENSE' sdist.list
       # As the release builds it: the notices copied in, all three files in the sdist.
@@ -187,7 +200,7 @@ jobs:
         working-directory: python
         run: |
           cp ../NOTICE ../LICENSE-THIRD-PARTY.md .
-          rm -rf dist && pipx run maturin sdist --out dist
+          rm -rf dist && uvx maturin sdist --out dist
           python3 ../.github/scripts/check-license-files.py dist/*.tar.gz
       - name: The crates carry LICENSE and NOTICE
         run: |
@@ -203,7 +216,7 @@ jobs:
           grep -qx data/esri.tsv.zst terrio-crs.list
 
   wasm:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -231,7 +244,7 @@ jobs:
   # core without them, natively and for WebAssembly.
   features:
     name: Cargo features
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -281,6 +294,8 @@ jobs:
 
   python:
     name: python (${{ matrix.os }})
+    # GitHub-hosted: maturin-action builds the manylinux wheel in a Docker container, which the
+    # self-hosted runner does not have.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -324,7 +339,7 @@ jobs:
     name: real data vs GDAL
     needs: changes
     if: needs.changes.outputs.real-data == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -383,7 +398,7 @@ jobs:
   hecras-corpus:
     name: HEC-RAS 7.0.1 corpus vs h5py
     if: vars.TERRIO_SKIP_HECRAS_CORPUS != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     env:
       CORPUS_REPO: gpt-cmdr/ras-hdf-test-corpus
       CORPUS_TAG: v1.0.1
@@ -411,7 +426,7 @@ jobs:
 
   conformance:
     name: point clouds and conformance vs GDAL
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
