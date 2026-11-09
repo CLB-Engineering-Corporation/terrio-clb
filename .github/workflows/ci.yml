@@ -254,7 +254,9 @@ jobs:
   # core without them, natively and for WebAssembly.
   features:
     name: Cargo features
-    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
+    # GitHub-hosted: the WebAssembly checks of terrio-crs --all-features compile the zstd C library
+    # with clang, which the self-hosted image does not have.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
