@@ -133,8 +133,13 @@ files) is left out with a warning; damaged data and I/O errors fail the open. A 
 
 These HEC-RAS datasets are left out on purpose:
 
-- A family with a line part of fewer than two points (one Spring_BLE breakline, HEC-RAS 6.1): the
-  engine's catalog refuses the whole layer. ras-commander skips that row instead.
+- A breakline with fewer than two stored points (one in Spring_BLE g01, HEC-RAS 6.1): the row is
+  left out of `breaklines` and the others are read, as ras-commander's `HdfBndry.get_breaklines`
+  does. Each row left out is a warning, and the archive path lists it in `omitted` (`layer`,
+  `source_row`, `point_count`, `reason` `BREAKLINE_TOO_FEW_POINTS`); the remaining rows keep
+  their `source_row` (`bl_id`). A breakline of two or more points with a part of fewer than two
+  still refuses the layer, as ras-commander raises on it. Other line families with such a part
+  are still refused whole (none has been seen).
 - Bitfield attribute columns: the engine's catalog does not map them to Arrow, so a family with
   one is refused (no tested file has one).
 - 2D flow areas stored as outlines only, with no computed mesh (`Polygon Info`/`Parts`/`Points`

@@ -271,7 +271,15 @@ def stored(f, mesh_names):
     for layer, path, geometry in ATTRIBUTE_TABLES:
         if path in f and path.replace("Attributes", geometry) in f:
             rows = f[path][()]
-            out["tables"][layer] = {"path": path, "rows": int(len(rows)), "columns": compound_columns(rows, nan=True)}
+            entry = {"path": path}
+            if layer == "breaklines":
+                # ras-commander (HdfBndry.get_breaklines) skips a breakline with fewer than two
+                # stored points (Polyline Info column 1); terrio leaves it out the same way.
+                counts = f[path.replace("Attributes", geometry)][()][:, 1]
+                entry["omitted_rows"] = [int(i) for i in np.flatnonzero(counts < 2)]
+                rows = rows[counts >= 2]
+            entry.update({"rows": int(len(rows)), "columns": compound_columns(rows, nan=True)})
+            out["tables"][layer] = entry
     if "Geometry/Pipe Conduits/Polyline Info" in f:
         out["pipe_conduits_lines_sha256"] = lines_digest(packed_lines(f, "Geometry/Pipe Conduits", "Polyline"))
     if "Geometry/Pipe Nodes/Points" in f:
