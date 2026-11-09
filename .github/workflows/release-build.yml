@@ -73,6 +73,10 @@ jobs:
       - uses: actions/checkout@v7
       # maturin sdist runs cargo metadata; the self-hosted Linux image has no Rust.
       - uses: dtolnay/rust-toolchain@stable
+      # maturin-action pip-installs maturin, which the image's system Python refuses (PEP 668).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
       # The notices, which maturin finds in python/ (by the default license-files globs, LICENSE*
       # and NOTICE*) with python/LICENSE, a copy of LICENSE kept in the repository. Not gitignored:
       # maturin leaves ignored files out of the sdist.
