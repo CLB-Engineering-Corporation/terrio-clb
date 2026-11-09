@@ -74,6 +74,22 @@ A breakline with no points, which the engine drew as a row without geometry, is 
 way. A short part inside a longer breakline still refuses the layer. Fixtures:
 `scripts/make_hecras_breaklines_fixture.py`.
 
+### CLB build: gdalwarp's `-wm`
+
+- `terrio warp --wm`, Python `terrio.warp(..., wm=)` and JavaScript `warp(src, { wm })` set the
+  working memory of a warp chunk (`WarpOptions::memory_limit`) as `gdalwarp -wm` reads it
+  (`ops::warp::parse_warp_memory`, translated from GDAL 3.13.3's `CPLParseMemorySize()`): a
+  number of megabytes below 10000 and of bytes from 10000, or with a `K`, `M` or `G` unit; 0
+  keeps the default of 64 MB. A percentage (`%`) is refused in this build. Ported from the
+  upstream branch `upstream/warp-bounded-2026-11`. `docs/cli.md` named `--wm` before the command
+  line had it.
+- Python's `max_memory_mib` (MiB) is kept and excludes `wm`. Its docstring said the values do not
+  depend on it; as with gdalwarp, they can, for interpolating kernels.
+- **Behaviour change (JavaScript only):** `warp`'s `wm` number was bytes. A number below 10000 is
+  now megabytes, as on the command line and in Python; a string with a unit is also accepted.
+- Without the option nothing changes: the default is the same 64 MiB, and the Python path-to-path
+  warp and mosaic (`warp_to_path`, `mosaic_to_path`) were already in this build.
+
 ### CLB build: the zstd C library for GeoTIFF/COG Zstandard by default
 
 User decision 2026-11-08: keep C as the default for GeoTIFF/COG Zstandard in this fork, and pure

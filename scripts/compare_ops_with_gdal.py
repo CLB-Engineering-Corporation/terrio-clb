@@ -282,6 +282,15 @@ def cases(d, tmp):
     )
     add("warp UTM->WGS84 ECOSTRESS near", ["gdalwarp", "-t_srs", "EPSG:4326", eco], ["warp", eco, "--t-srs", "EPSG:4326"])
     add("warp UTM->WGS84 ECOSTRESS bilinear", ["gdalwarp", "-t_srs", "EPSG:4326", "-r", "bilinear", eco], ["warp", eco, "--t-srs", "EPSG:4326", "-r", "bilinear"], 1e-3)
+    # The working memory of a chunk (-wm): megabytes below 10000, bytes from it, or with a unit.
+    for wm in ["1", "500000", "64MB"]:
+        for method, tol in [("near", 0.0), ("bilinear", 1e-3)]:
+            add(
+                f"warp ECOSTRESS -wm {wm} {method}",
+                ["gdalwarp", "-t_srs", "EPSG:4326", "-r", method, "-wm", wm, eco],
+                ["warp", eco, "--t-srs", "EPSG:4326", "-r", method, "--wm", wm],
+                tol,
+            )
     add("warp landsat ->4326 near", ["gdalwarp", "-t_srs", "EPSG:4326", landsat], ["warp", landsat, "--t-srs", "EPSG:4326"])
     add("warp landsat ->3857 cubic", ["gdalwarp", "-t_srs", "EPSG:3857", "-r", "cubic", landsat], ["warp", landsat, "--t-srs", "EPSG:3857", "-r", "cubic"], 1.0)
     add("warp cog 4326->3857 near", ["gdalwarp", "-t_srs", "EPSG:3857", cog], ["warp", cog, "--t-srs", "EPSG:3857"])

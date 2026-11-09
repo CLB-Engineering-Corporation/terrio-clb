@@ -196,6 +196,7 @@ terrio.convert("countries.shp", "europe.gpkg", where="CONTINENT = 'Europe'", sel
 terrio.convert("https://example.com/cog.tif", "window.tif", srcwin=(0, 0, 512, 512))
 terrio.translate("dem.tif", "small.tif", outsize=("25%", "25%"), resampling="average")
 terrio.warp("dem.tif", "dem_4326.tif", t_srs="EPSG:4326", resampling="bilinear")
+terrio.warp("dem.tif", "dem_4326.tif", t_srs="EPSG:4326", wm=16)  # gdalwarp -wm 16: 16 MB chunks
 terrio.mosaic(["n40w106.tif", "n40w107.tif"], "mosaic.tif")
 terrio.rasterize("counties.gpkg", "pop.tif", attribute="POPULATION", tr=(0.01, 0.01), ot="Int32")
 polygons = terrio.polygonize("landcover.tif", connectedness=8)

@@ -798,10 +798,14 @@ Inputs warped to a GeoTIFF or COG (without `--cutline`) are warped in chunks of 
 from a window of its input, and written a strip of rows at a time, as `gdalwarp` does: neither the
 inputs nor the output are held whole. Several inputs are drawn in order, as in memory: a chunk of an
 input is warped once the chunks of earlier inputs that it overlaps are done, so the output is that
-of the warp in memory, bit for bit. `--wm MIB` sets the memory of a chunk (default 64), as
-`gdalwarp -wm`; as with gdalwarp, another chunk size can change a few pixels. Python's
-`terrio.warp(paths, dst=path, max_memory_mib=...)` does the same and returns the result opened
-lazily from `dst`.
+of the warp in memory, bit for bit. `--wm` sets the working memory of a chunk and is read as
+`gdalwarp -wm` reads it: a number of megabytes below 10000 and of bytes from 10000 (`64` and
+`67108864` are both the default of 64 MB), or a number with a `K`, `M` or `G` unit, optionally
+followed by `B` (`512MB`, `2G`); 0 keeps the default. A percentage of the usable memory (`10%`)
+is refused in this build. As with gdalwarp, another chunk size can change a few pixels of the
+interpolating kernels, since each chunk has its own source window and approximate transformer; at
+the same `--wm` the chunks are gdalwarp's. Python's `terrio.warp(paths, dst=path, wm=...)` (or
+`max_memory_mib=`, in MiB) does the same and returns the result opened lazily from `dst`.
 
 ```sh
 terrio warp scene.tif scene_4326.tif --rpc --to RPC_HEIGHT=120

@@ -1165,9 +1165,14 @@ fn translate(
 ///         `pixel_offset`, `line_offset`, `pixel_step`, `line_step`, `pixel_center`.
 ///     wo: Warp options, as `gdalwarp -wo`: `SOURCE_EXTRA` and `SAMPLE_STEPS` (`ALL`); others
 ///         are ignored.
-///     max_memory_mib: The memory of a chunk of the warp, in MiB, as `gdalwarp -wm` (default
-///         64): the output is warped in chunks of about this many bytes of source and output
-///         pixels. The values do not depend on it.
+///     max_memory_mib: The working memory of a chunk of the warp, in MiB (default 64): the
+///         output is warped in chunks of about this many bytes of source and output pixels. As
+///         with `gdalwarp -wm`, another chunk size can change some pixels of interpolating
+///         kernels (each chunk has its own source window and approximate transformer); the
+///         in-memory and path-to-path warps agree at the same value. Excludes `wm`.
+///     wm: The same working memory as `gdalwarp -wm` reads it: a number of megabytes below
+///         10000 and of bytes from 10000, or a string with a unit (`"512MB"`, `"2G"`); 0 keeps
+///         the default of 64 MB. `wm=16` warps as `gdalwarp -wm 16`. Excludes `max_memory_mib`.
 ///
 /// Returns:
 ///     Raster: The result. Source paths warped to a `dst` path are returned opened lazily from
@@ -1179,7 +1184,7 @@ fn translate(
     src, dst=None, *, s_srs=None, t_srs=None, tr=None, te=None, te_srs=None, ts=None, dst_transform=None, tap=false,
     resampling="near", overview=None, srcnodata=None, dstnodata=None, ot=None, cutline=None, crop_to_cutline=false, et=0.125,
     format=None, compress=None, tile_size=None, bigtiff=false, gcps=None, order=0, gcp_method="auto",
-    rpc=None, to=None, wo=None, geoloc=false, geolocation=None, kernel_version="3.12", max_memory_mib=None
+    rpc=None, to=None, wo=None, geoloc=false, geolocation=None, kernel_version="3.12", max_memory_mib=None, wm=None
 ))]
 #[allow(clippy::too_many_arguments)]
 fn warp(
@@ -1216,10 +1221,15 @@ fn warp(
     geolocation: Option<&Bound<'_, pyo3::types::PyDict>>,
     kernel_version: &str,
     max_memory_mib: Option<f64>,
+    wm: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyRaster> {
     if max_memory_mib.is_some_and(|m| m.is_nan() || m <= 0.0) {
         return Err(invalid("max_memory_mib must be positive"));
     }
+    if max_memory_mib.is_some() && wm.is_some() {
+        return Err(invalid("give wm or max_memory_mib, not both"));
+    }
+    let memory_limit = wm.map(warp_memory).transpose()?;
     if tap && tr.is_none() {
         return Err(invalid("tap needs tr"));
     }
@@ -1277,6 +1287,9 @@ fn warp(
     }
     if let Some(mib) = max_memory_mib {
         o.memory_limit = mib * 1024.0 * 1024.0;
+    }
+    if let Some(m) = memory_limit {
+        o.memory_limit = m;
     }
     enum Input {
         File(Box<terrio::LazyRaster>),
@@ -1427,6 +1440,18 @@ fn warp(
         terrio::ops::warp::warp_sources(&mut refs, &prepared)
     })?;
     finish_raster(py, out, dst, format, compress, tile_size, bigtiff)
+}
+
+/// A `wm` argument (a number, or a string with a unit) as the warp's working memory in bytes.
+fn warp_memory(v: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if v.is_instance_of::<PyBool>() {
+        return Err(invalid("wm must be a number or a string, not a boolean"));
+    }
+    if let Ok(s) = v.extract::<String>() {
+        return terrio::ops::warp::parse_warp_memory(&s).py();
+    }
+    let n = v.extract::<f64>().map_err(|_| invalid("wm must be a number of megabytes (below 10000) or bytes, or a string with a unit"))?;
+    terrio::ops::warp::warp_memory_from_number(n).py()
 }
 
 /// Mosaics rasters into one, like `terrio mosaic` (GDAL's `gdalbuildvrt` then

@@ -972,6 +972,7 @@ def warp(
     geolocation: Mapping[str, Any] | None = None,
     kernel_version: str = "3.12",
     max_memory_mib: float | None = None,
+    wm: float | str | None = None,
 ) -> Raster: ...
 def mosaic(
     srcs: _RasterSource | Sequence[_RasterSource],

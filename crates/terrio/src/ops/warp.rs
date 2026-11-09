@@ -201,7 +201,10 @@ pub struct WarpOptions {
     pub crop_to_cutline: bool,
     /// Maximum error, in pixels, of the approximate transformer (`-et`; 0 for exact transforms).
     pub error_threshold: f64,
-    /// Working memory per chunk, in bytes (`-wm`), which decides how the output is split.
+    /// Working memory per chunk, in bytes (`-wm`), which decides how the output is split. As in
+    /// GDAL, another value can change some pixels of interpolating kernels, since each chunk has
+    /// its own source window and approximate transformer. [`parse_warp_memory`] reads a `-wm`
+    /// value.
     pub memory_limit: f64,
     /// Ground control points georeferencing the (first) source in place of its geotransform,
     /// in the source CRS: warped with a GCP polynomial or thin plate splines, as `gdalwarp` warps
@@ -258,7 +261,7 @@ impl Default for WarpOptions {
             cutline: None,
             crop_to_cutline: false,
             error_threshold: 0.125,
-            memory_limit: 64.0 * 1024.0 * 1024.0,
+            memory_limit: DEFAULT_MEMORY_LIMIT,
             gcps: Vec::new(),
             gcp_method: super::gcp::GcpMethod::Auto,
             order: 0,
@@ -269,6 +272,109 @@ impl Default for WarpOptions {
             rpc_output_window: false,
         }
     }
+}
+
+/// The default [`WarpOptions::memory_limit`], 64 MiB, as GDAL's `GDALCreateWarpOptions()`.
+pub const DEFAULT_MEMORY_LIMIT: f64 = 64.0 * 1024.0 * 1024.0;
+
+/// A plain `-wm` number below this is megabytes; from it, bytes.
+const WM_MEGABYTES_BELOW: i64 = 10_000;
+
+/// The working memory of a warp chunk, in bytes, from a `gdalwarp -wm` value, as GDAL 3.13.3
+/// reads it (translated from `CPLParseMemorySize()` in `port/cpl_string.cpp` and the `-wm`
+/// handler of `apps/gdalwarp_lib.cpp`):
+///
+/// - a number with no unit is megabytes below 10000 and bytes from 10000 (`64` is 64 MiB,
+///   `500000000` is 500,000,000 bytes); it is truncated to a whole number first, so `0.5` is 0;
+/// - `K`, `M` or `G` (any case, optionally followed by `B`) multiply by 1024, 1024² or 1024³,
+///   and the result is bytes whatever its size (`512MB`, `2G`);
+/// - spaces are allowed around the number and the unit;
+/// - 0 keeps the default, [`DEFAULT_MEMORY_LIMIT`], as gdalwarp does.
+///
+/// Negative, non-finite and malformed values are refused. A percentage of the usable memory
+/// (`10%`) is refused in this build, which does not determine that memory (GDAL's
+/// `CPLGetUsablePhysicalRAM()`). Unlike GDAL, which reads at most 100 characters and takes the
+/// number with `strtod`, the whole value is read and hexadecimal numbers are refused.
+///
+/// ```
+/// use terrio::ops::warp::parse_warp_memory;
+///
+/// assert_eq!(parse_warp_memory("64")?, 64.0 * 1024.0 * 1024.0);
+/// assert_eq!(parse_warp_memory("500000000")?, 500_000_000.0);
+/// assert_eq!(parse_warp_memory("512MB")?, 512.0 * 1024.0 * 1024.0);
+/// assert!(parse_warp_memory("-1").is_err());
+/// # Ok::<(), terrio::Error>(())
+/// ```
+pub fn parse_warp_memory(value: &str) -> Result<f64> {
+    parse_warp_memory_with(value, || None)
+}
+
+/// The working memory of a warp chunk, in bytes, from a `-wm` number without a unit (as a
+/// binding receives it): [`parse_warp_memory`] of its decimal form.
+pub fn warp_memory_from_number(value: f64) -> Result<f64> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(Error::InvalidArgument(format!("invalid warp memory {value}: a non-negative number is needed")));
+    }
+    parse_warp_memory(&format!("{value}"))
+}
+
+/// [`parse_warp_memory`], with the usable memory (for `%`) from `usable`.
+fn parse_warp_memory_with(value: &str, usable: impl Fn() -> Option<u64>) -> Result<f64> {
+    let bad = || {
+        Error::InvalidArgument(format!(
+            "invalid warp memory '{value}': a number of megabytes (below 10000) or bytes, with an optional K, M, G or % unit"
+        ))
+    };
+    let s = value.trim_start_matches(' ');
+    // The longest prefix that parses as a number, as `strtod` takes it.
+    let end = (1..=s.len()).rev().filter(|&n| s.is_char_boundary(n)).find(|&n| {
+        let p = &s[..n];
+        p.parse::<f64>().is_ok() && p.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'+' | b'-' | b'e' | b'E'))
+    });
+    let Some(end) = end else { return Err(bad()) };
+    let mut number: f64 = s[..end].parse().map_err(|_| bad())?;
+    if !number.is_finite() || number < 0.0 {
+        return Err(bad());
+    }
+    let rest = &s.as_bytes()[end..];
+    let mut unit = false;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i] {
+            b' ' => {}
+            b'%' if !unit => {
+                if number > 100.0 {
+                    return Err(Error::InvalidArgument(format!("invalid warp memory '{value}': a percentage is at most 100")));
+                }
+                let bytes = usable().filter(|&b| b > 0).ok_or_else(|| {
+                    Error::Unsupported(format!("warp memory '{value}': the memory this process can use cannot be determined"))
+                })?;
+                number *= (bytes / 100) as f64;
+                unit = true;
+            }
+            c @ (b'K' | b'k' | b'M' | b'm' | b'G' | b'g') if !unit => {
+                number *= match c.to_ascii_uppercase() {
+                    b'K' => 1024.0,
+                    b'M' => 1024.0 * 1024.0,
+                    _ => 1024.0 * 1024.0 * 1024.0,
+                };
+                unit = true;
+                if matches!(rest.get(i + 1), Some(b'B' | b'b')) {
+                    i += 1;
+                }
+            }
+            _ => return Err(bad()),
+        }
+        i += 1;
+    }
+    if number >= i64::MAX as f64 {
+        return Err(Error::InvalidArgument(format!("invalid warp memory '{value}': too large")));
+    }
+    let mut bytes = number as i64;
+    if !unit && bytes < WM_MEGABYTES_BELOW {
+        bytes *= 1024 * 1024;
+    }
+    Ok(if bytes == 0 { DEFAULT_MEMORY_LIMIT } else { bytes as f64 })
 }
 
 // ─── Coordinate transformation between pixel spaces ─────────────────────────────────────────────
@@ -3201,6 +3307,46 @@ impl<T: crate::pixel::Pixel> Kernel<'_, T> {
 mod tests {
     use super::*;
     use wbraster::{Raster, RasterConfig};
+
+    /// `-wm` values as GDAL 3.13.3's `gdalwarp` reads them (`CPLParseMemorySize()`).
+    #[test]
+    fn warp_memory_is_read_as_gdalwarp_reads_wm() {
+        const MIB: f64 = 1024.0 * 1024.0;
+        let usable = || Some(8_000_000_000u64);
+        let parse = |v: &str| parse_warp_memory_with(v, usable);
+        for (value, bytes) in [
+            ("64", 64.0 * MIB),
+            ("9999", 9999.0 * MIB),
+            ("10000", 10000.0),
+            ("500000000", 500_000_000.0),
+            // Truncated to a whole number first, as GDAL stores it in an integer.
+            ("1.9", MIB),
+            ("0.5", DEFAULT_MEMORY_LIMIT),
+            ("0", DEFAULT_MEMORY_LIMIT),
+            ("512MB", 512.0 * MIB),
+            ("512 mb", 512.0 * MIB),
+            ("2G", 2048.0 * MIB),
+            ("1.5k", 1536.0),
+            ("1K", 1024.0),
+            ("  64  ", 64.0 * MIB),
+            ("1e3", 1000.0 * MIB),
+            ("50%", 50.0 * 80_000_000.0),
+            ("100 %", 100.0 * 80_000_000.0),
+        ] {
+            assert_eq!(parse(value).unwrap(), bytes, "{value}");
+        }
+        for bad in ["", "-1", "abc", "64X", "64MBB", "64 M B", "5%M", "M64", "101%", "inf", "nan", "1e400"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+        // This build does not determine the usable memory, so a percentage is refused.
+        assert!(matches!(parse_warp_memory("10%"), Err(Error::Unsupported(_))));
+        assert_eq!(parse_warp_memory("64").unwrap(), 64.0 * MIB);
+        assert_eq!(warp_memory_from_number(64.0).unwrap(), 64.0 * MIB);
+        assert_eq!(warp_memory_from_number(20000.0).unwrap(), 20000.0);
+        assert!(warp_memory_from_number(-1.0).is_err());
+        assert!(warp_memory_from_number(f64::NAN).is_err());
+        assert_eq!(WarpOptions::default().memory_limit, DEFAULT_MEMORY_LIMIT);
+    }
 
     /// RPCs of a 120 x 100 image near (10.0 E, 45.0 N), whose columns move with the height.
     fn test_rpc() -> super::super::rpc::Rpc {
