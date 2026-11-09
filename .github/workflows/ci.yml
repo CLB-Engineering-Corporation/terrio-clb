@@ -127,6 +127,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal-backend
           # The GDAL the real-data job compares with, and the drivers the tests use.
           create-args: libgdal-core=3.12.2 proj=9.8.1 libgdal-hdf4 libgdal-hdf5 libgdal-netcdf libgdal-kea
@@ -360,6 +363,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal
           # The reference: the EPSG table and test points come from GDAL 3.12.2 and PROJ 9.8.1, and
           # newer EPSG databases change some transformations. rasterio comes from pip (with its
@@ -454,6 +460,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal
           # As in the real-data job: the two share the cached environment.
           create-args: gdal=3.12.2 libgdal-core=3.12.2 proj=9.8.1 libgdal-arrow-parquet libgdal-jp2openjpeg libgdal-netcdf libgdal-hdf5 libgdal-grib numpy pip pytest maturin pyproj pdal laspy lazrs-python pyarrow geopandas shapely

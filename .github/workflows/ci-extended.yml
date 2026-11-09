@@ -166,6 +166,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal
           # As in ci.yml's real-data job: the two share the cached environment.
           create-args: gdal=3.12.2 libgdal-core=3.12.2 proj=9.8.1 libgdal-arrow-parquet libgdal-jp2openjpeg libgdal-netcdf libgdal-hdf5 libgdal-grib numpy pip pytest maturin pyproj pdal laspy lazrs-python pyarrow geopandas shapely
