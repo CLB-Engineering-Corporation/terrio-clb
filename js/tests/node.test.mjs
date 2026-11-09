@@ -721,6 +721,16 @@ test("operations on in-memory rasters and layers", () => {
   const dem = terrio.rasterFromArray(data, 20, 10, [500000, 30, 0, 4100000, 0, -30], "EPSG:32610", -9999);
   const warped = terrio.warp(dem, { tSrs: "EPSG:4326", resampling: "bilinear" });
   assert.equal(warped.crs, "EPSG:4326");
+  // `wm` as gdalwarp -wm: 64 (megabytes), "64MB" and 67108864 (bytes) are the default; 2000 bytes
+  // warps in many chunks, onto the same grid.
+  for (const wm of [64, "64MB", 67108864, 0, 2000, "0.002M"]) {
+    const w = terrio.warp(dem, { tSrs: "EPSG:4326", resampling: "bilinear", wm });
+    assert.deepEqual([w.width, w.height], [warped.width, warped.height]);
+    if (wm !== 2000 && wm !== "0.002M") assert.deepEqual(w.readBand(1), warped.readBand(1));
+  }
+  for (const wm of [-1, "64X", "101%", true]) {
+    assert.throws(() => terrio.warp(dem, { tSrs: "EPSG:4326", wm }));
+  }
   const t = terrio.translate(dem, { srcwin: [2, 3, 5, 4], ot: "Int16" });
   assert.deepEqual([t.width, t.height, t.dtype], [5, 4, "int16"]);
   assert.equal(t.readBand(1)[0], 23);

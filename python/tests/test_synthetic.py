@@ -347,6 +347,65 @@ def test_warp_and_mosaic(tmp_path):
         terrio.mosaic([left, right], str(tmp_path / "x.vrt"))
 
 
+def test_warp_and_mosaic_paths_are_written_as_the_cli_writes_them(tmp_path):
+    """A source path warped (or source paths mosaicked) to a path is written by the command
+    line's path-to-path writer, with the values of the warp in memory, and returned lazily."""
+    rows, cols = np.mgrid[0:90, 0:70]
+    data = ((rows * 7 + cols * 13) % 251).astype("float32")
+    src = tmp_path / "src.tif"
+    terrio.Raster.from_array(data, TRANSFORM, crs="EPSG:32610", nodata=0).write(str(src))
+    kw = {"t_srs": "EPSG:4326", "resampling": "bilinear"}
+    for wm in [None, 64, "64MB", 20000, "0.02MB"]:
+        extra = {} if wm is None else {"wm": wm}
+        whole = terrio.warp(terrio.open_raster(str(src)), **kw, **extra)
+        out = terrio.warp(str(src), dst=str(tmp_path / "w.tif"), **kw, **extra)
+        assert out.is_lazy
+        np.testing.assert_array_equal(out.read(), whole.read())
+        assert out.transform == pytest.approx(whole.transform) and out.nodata == whole.nodata
+    # 64 is megabytes, 67108864 bytes: both are the default.
+    default = terrio.warp(str(src), **kw).read()
+    np.testing.assert_array_equal(terrio.warp(str(src), wm=67108864, **kw).read(), default)
+    for bad in [-1, "64X", True, "101%"]:
+        with pytest.raises((terrio.InvalidArgumentError, ValueError)):
+            terrio.warp(str(src), wm=bad, **kw)
+    # The CLB build's max_memory_mib (MiB) is the same working memory; the two exclude each other.
+    for mib in [16, 0.0625, 0.015625]:
+        np.testing.assert_array_equal(
+            terrio.warp(str(src), dst=str(tmp_path / "mib.tif"), max_memory_mib=mib, **kw).read(),
+            terrio.warp(str(src), dst=str(tmp_path / "wm.tif"), wm=f"{mib * 1024}K", **kw).read(),
+        )
+    with pytest.raises((terrio.InvalidArgumentError, ValueError)):
+        terrio.warp(str(src), wm=16, max_memory_mib=16, **kw)
+    # Several sources and a source path given with a Raster.
+    two = terrio.warp([str(src), str(src)], dst=str(tmp_path / "w2.tif"), **kw)
+    assert two.is_lazy
+    np.testing.assert_array_equal(two.read(), default)
+    mixed = terrio.warp(
+        [str(src), terrio.open_raster(str(src))], dst=str(tmp_path / "w3.tif"), **kw
+    )
+    assert not mixed.is_lazy
+    # Mosaic: sources on the output grid, and one at twice its resolution.
+    left = terrio.translate(str(src), srcwin=(0, 0, 40, 90))
+    left.write(str(tmp_path / "l.tif"))
+    srcs = [str(tmp_path / "l.tif"), str(src)]
+    ref = terrio.mosaic([terrio.open_raster(p) for p in srcs])
+    m = terrio.mosaic(srcs, str(tmp_path / "m.tif"))
+    assert m.is_lazy
+    np.testing.assert_array_equal(m.read(), ref.read())
+    coarse = terrio.Raster.from_array(
+        data[::2, ::2].copy(),
+        (TRANSFORM[0], TRANSFORM[1] * 2, 0.0, TRANSFORM[3], 0.0, TRANSFORM[5] * 2),
+        crs="EPSG:32610",
+        nodata=0,
+    )
+    coarse.write(str(tmp_path / "c.tif"))
+    srcs = [str(tmp_path / "c.tif"), str(src)]
+    ref = terrio.mosaic([terrio.open_raster(p) for p in srcs], resolution="highest")
+    m = terrio.mosaic(srcs, str(tmp_path / "m2.tif"), resolution="highest")
+    assert m.is_lazy
+    np.testing.assert_array_equal(m.read(), ref.read())
+
+
 def test_dem_products(tmp_path):
     """Checks hillshade, slope, aspect and color relief on a tilted plane."""
     cols = np.arange(8, dtype="float32")

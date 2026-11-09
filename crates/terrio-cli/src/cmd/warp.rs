@@ -94,6 +94,13 @@ pub struct Args {
     /// default and changes nothing).
     #[arg(long = "wo", value_name = "KEY=VALUE")]
     warp_options: Vec<String>,
+    /// The working memory of a chunk of the warp, as `gdalwarp -wm`: megabytes below 10000,
+    /// bytes from 10000, or with a unit (`512MB`, `2G`); 64 MB by default, and 0 keeps it. The
+    /// output is warped in chunks of about this many bytes of source and output pixels. As with
+    /// gdalwarp, another chunk size can change some pixels, since each chunk has its own source
+    /// window and approximate transformer.
+    #[arg(long = "wm", value_name = "MEMORY", allow_hyphen_values = true)]
+    memory: Option<String>,
     #[command(flatten)]
     out: OutputArgs,
 }
@@ -146,6 +153,9 @@ pub fn run(a: Args) -> terrio::Result<()> {
         rpc_options,
         ..Default::default()
     };
+    if let Some(m) = &a.memory {
+        o.memory_limit = terrio::ops::warp::parse_warp_memory(m)?;
+    }
     if o.target_aligned_pixels && o.resolution.is_none() {
         return Err(terrio::Error::InvalidArgument("--tap needs --tr".into()));
     }
