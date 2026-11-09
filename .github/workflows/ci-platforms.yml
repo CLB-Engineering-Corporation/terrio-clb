@@ -1,9 +1,11 @@
-name: CI (macOS and Windows)
+name: CI (Windows, macOS on request)
 
-# The Rust and Python jobs of ci.yml on macOS and Windows, which are slow: they run on every push
-# to main, and for pull requests on demand only, by hand (Actions > CI (macOS and Windows) > Run
-# workflow) or with the label ci:macos, ci:windows or ci:all (when the label is added, and on
+# The Rust and Python jobs of ci.yml on Windows and macOS, which are slow. Windows runs on every
+# push to main, and for pull requests on demand only, by hand (Actions > CI (Windows, macOS on
+# request) > Run workflow) or with the label ci:windows or ci:all (when the label is added, and on
 # each push while it stays).
+# macOS runners are slow and expensive, so macOS never runs on its own: only by hand (choose
+# macos or all) or with the label ci:macos. Neither a push to main nor ci:all includes it.
 on:
   push:
     branches: [main]
@@ -14,8 +16,8 @@ on:
       platforms:
         description: "Platforms to run"
         type: choice
-        options: [all, macos, windows]
-        default: all
+        options: [windows, macos, all]
+        default: windows
 
 permissions:
   contents: read
@@ -45,9 +47,12 @@ jobs:
           fi
           want() {
             if [ "$EVENT" = push ]; then
-              true
+              [ "$1" = windows ]
             elif [ "$EVENT" = workflow_dispatch ]; then
               [ "$CHOICE" = all ] || [ "$CHOICE" = "$1" ]
+            elif [ "$1" = macos ]; then
+              # ci:all does not include macOS: only its own label does.
+              echo "$LABELS" | jq -e 'index("ci:macos") != null' > /dev/null
             else
               echo "$LABELS" | jq -e --arg l "ci:$1" 'index($l) != null or index("ci:all") != null' > /dev/null
             fi
