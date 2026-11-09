@@ -113,7 +113,8 @@ def test_degenerate_breaklines_are_omitted_not_refused(tmp_path):
     with pytest.warns(UserWarning, match="BREAKLINE_TOO_FEW_POINTS"):
         found = terrio.hecras.archive_layers(path, results=False)
     assert not any(s["layer"] == "breaklines" for s in found["skipped"])
-    omitted = [(o["layer"], o["source_row"], o["point_count"], o["reason"]) for o in found["omitted"]]
+    keys = ("layer", "source_row", "point_count", "reason")
+    omitted = [tuple(o[k] for k in keys) for o in found["omitted"]]
     assert omitted == [
         ("breaklines", 2, 1, "BREAKLINE_TOO_FEW_POINTS"),
         ("breaklines", 3, 0, "BREAKLINE_TOO_FEW_POINTS"),
