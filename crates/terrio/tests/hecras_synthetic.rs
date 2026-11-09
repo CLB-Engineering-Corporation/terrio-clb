@@ -204,3 +204,28 @@ fn summaries_are_refused_on_perimeters() {
     let e = hdf.mesh_perimeters(&MeshOptions::default().with_meshes(["Good"]).with_summary("Maximum Water Surface")).unwrap_err();
     assert!(matches!(e, terrio::Error::InvalidArgument(_)));
 }
+
+/// A breakline with fewer than two points is left out of the `breaklines` layer (with a warning),
+/// as ras-commander skips it; the others keep their `source_row`. A short part inside a longer
+/// breakline still refuses the layer. Fixtures: `scripts/make_hecras_breaklines_fixture.py`.
+#[test]
+fn degenerate_breaklines_are_left_out_of_the_layer() {
+    let hdf = open("breaklines_point.h5");
+    assert!(hdf.layer_names().unwrap().iter().any(|n| n == "breaklines"));
+    let l = hdf.read_layer("breaklines").unwrap();
+    let rows: Vec<&FieldValue> = l.features.iter().map(|f| &f.attributes[0]).collect();
+    assert_eq!(rows, [&FieldValue::Integer(0), &FieldValue::Integer(1), &FieldValue::Integer(4)]);
+    assert!(matches!(&l.features[1].geometry, Some(Geometry::MultiLineString(p)) if p.len() == 2));
+    assert!(matches!(&l.features[2].geometry, Some(Geometry::LineString(c)) if c.len() == 2));
+    let good = open("breaklines_good.h5").read_layer("breaklines").unwrap();
+    for (a, b) in l.features[..2].iter().zip(&good.features) {
+        assert_eq!((&a.attributes, &a.geometry), (&b.attributes, &b.geometry));
+    }
+    assert_eq!(good.features.len(), 2);
+    let archive = hdf.archive_layers(&terrio::hecras::archive::ArchiveOptions::default().with_results(false)).unwrap();
+    let omitted: Vec<(u64, u64)> = archive.omitted.iter().map(|o| (o.source_row, o.point_count)).collect();
+    assert_eq!(omitted, [(2, 1), (3, 0)]);
+    assert!(archive.skipped.is_empty());
+    let e = open("breaklines_short_part.h5").read_layer("breaklines").unwrap_err();
+    assert!(e.to_string().contains("fewer than two points"), "{e}");
+}

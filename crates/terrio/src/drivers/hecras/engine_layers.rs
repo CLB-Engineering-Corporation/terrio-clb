@@ -54,11 +54,21 @@ impl HecRasHdf {
 
 /// The values and geometries of an engine layer.
 pub(crate) fn rows(layer: &ArrowLayer) -> crate::Result<EngineRows> {
-    let identity: Vec<&str> = std::iter::once(layer.identity.0.as_str()).chain(layer.identity.1.as_deref()).collect();
-    let geometry = layer.schema.index_of("geometry").ok();
+    rows_of(&layer.name, &layer.schema, &layer.batches, &layer.identity)
+}
+
+/// [`rows`] of a layer given as its parts.
+pub(crate) fn rows_of(
+    name: &str,
+    schema: &arrow_schema::SchemaRef,
+    batches: &[arrow_array::RecordBatch],
+    identity: &(String, Option<String>),
+) -> crate::Result<EngineRows> {
+    let identity: Vec<&str> = std::iter::once(identity.0.as_str()).chain(identity.1.as_deref()).collect();
+    let geometry = schema.index_of("geometry").ok();
     let mut fields = Vec::new();
     let mut columns = Vec::new();
-    for (i, f) in layer.schema.fields().iter().enumerate() {
+    for (i, f) in schema.fields().iter().enumerate() {
         if Some(i) == geometry {
             continue;
         }
@@ -68,7 +78,7 @@ pub(crate) fn rows(layer: &ArrowLayer) -> crate::Result<EngineRows> {
             DataType::Float32 | DataType::Float64 => FieldType::Float,
             DataType::Boolean => FieldType::Boolean,
             other => {
-                return Err(crate::Error::Unsupported(format!("HEC-RAS {} field {:?}: unmapped Arrow type {other}", layer.name, f.name())));
+                return Err(crate::Error::Unsupported(format!("HEC-RAS {} field {:?}: unmapped Arrow type {other}", name, f.name())));
             }
         };
         let mut def = FieldDef::new(f.name().clone(), kind);
@@ -76,27 +86,27 @@ pub(crate) fn rows(layer: &ArrowLayer) -> crate::Result<EngineRows> {
         fields.push(def);
         columns.push(i);
     }
-    let mut rows = Vec::with_capacity(layer.num_rows());
-    for batch in &layer.batches {
+    let mut rows = Vec::with_capacity(batches.iter().map(|b| b.num_rows()).sum());
+    for batch in batches {
         let arrays: Vec<&ArrayRef> = columns.iter().map(|&i| batch.column(i)).collect();
         let wkb = match geometry {
             Some(g) => Some(
                 batch
                     .column(g)
                     .as_binary_opt::<i32>()
-                    .ok_or_else(|| crate::Error::InvalidData(format!("HEC-RAS {}: geometry is not WKB Binary", layer.name)))?,
+                    .ok_or_else(|| crate::Error::InvalidData(format!("HEC-RAS {}: geometry is not WKB Binary", name)))?,
             ),
             None => None,
         };
         for row in 0..batch.num_rows() {
-            let values = arrays.iter().map(|a| value(a.as_ref(), row, &layer.name)).collect::<crate::Result<Vec<_>>>()?;
-            let geometry =
-                match wkb {
-                    Some(w) if !w.is_null(row) => Some(decode_wkb(w.value(row)).ok_or_else(|| {
-                        crate::Error::InvalidData(format!("HEC-RAS {} row {row}: WKB the driver does not map", layer.name))
-                    })?),
-                    _ => None,
-                };
+            let values = arrays.iter().map(|a| value(a.as_ref(), row, name)).collect::<crate::Result<Vec<_>>>()?;
+            let geometry = match wkb {
+                Some(w) if !w.is_null(row) => Some(
+                    decode_wkb(w.value(row))
+                        .ok_or_else(|| crate::Error::InvalidData(format!("HEC-RAS {} row {row}: WKB the driver does not map", name)))?,
+                ),
+                _ => None,
+            };
             rows.push((values, geometry));
         }
     }

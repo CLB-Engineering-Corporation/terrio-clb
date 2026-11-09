@@ -6,8 +6,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use std::time::Instant;
 use terrio::geoparquet::{ArrowLayer, GeoParquetWriteOptions, MemoryLayer};
-use terrio::hecras::HecRasHdf;
 use terrio::hecras::archive::{ArchiveLayerKind, ArchiveOptions, ArchiveSkip, HecRasArchive, write_archive};
+use terrio::hecras::{HecRasHdf, OmittedRow};
 
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hecras_archive_layers, m)?)?;
@@ -56,6 +56,19 @@ fn skipped<'py>(py: Python<'py>, skipped: &[ArchiveSkip]) -> PyResult<Bound<'py,
     Ok(out)
 }
 
+fn omitted<'py>(py: Python<'py>, omitted: &[OmittedRow]) -> PyResult<Bound<'py, PyList>> {
+    let out = PyList::empty(py);
+    for o in omitted {
+        let d = PyDict::new(py);
+        d.set_item("layer", &o.layer)?;
+        d.set_item("source_row", o.source_row)?;
+        d.set_item("point_count", o.point_count)?;
+        d.set_item("reason", &o.reason)?;
+        out.append(d)?;
+    }
+    Ok(out)
+}
+
 /// Reads the archive layers of a HEC-RAS geometry (`.g##.hdf`) or plan (`.p##.hdf`) HDF file
 /// as Arrow tables, with no GeoDataFrame in between.
 ///
@@ -68,6 +81,9 @@ fn skipped<'py>(py: Python<'py>, skipped: &[ArchiveSkip]) -> PyResult<Bound<'py,
 /// A layer or variable the engine refuses (for example `Cell Last Iteration`, which stores no
 /// element location) does not fail the call: it is listed in `skipped`, so that the caller can
 /// read it another way and pass it to `write_hecras_archive(extra_layers=...)`.
+///
+/// A breakline with fewer than two stored points is left out of `breaklines`, as ras-commander
+/// skips it, and listed in `omitted` (with a `UserWarning`); the other breaklines are read.
 ///
 /// Args:
 ///     path: The HDF file.
@@ -85,7 +101,9 @@ fn skipped<'py>(py: Python<'py>, skipped: &[ArchiveSkip]) -> PyResult<Bound<'py,
 /// Returns:
 ///     dict: `layers` (a list of dicts: `name`, `kind` (`geometry` or `summary`), `canonical`
 ///     or `variable`, `identity`, `rows`, `table`, an `ArrowTable`), `skipped` (a list of dicts:
-///     `layer`, `variable`, `kind`, `code`, `reason`), `crs_wkt` and `seconds`.
+///     `layer`, `variable`, `kind`, `code`, `reason`), `omitted` (a list of dicts: `layer`,
+///     `source_row`, `point_count`, `reason` `BREAKLINE_TOO_FEW_POINTS`), `crs_wkt` and
+///     `seconds`.
 #[pyfunction]
 #[pyo3(signature = (
     path, *, geometry=true, results=true, layers=None, variables=None, summary_geometry=true,
@@ -130,6 +148,7 @@ pub(crate) fn hecras_archive_layers<'py>(
     }
     out.set_item("layers", list)?;
     out.set_item("skipped", skipped(py, &archive.skipped)?)?;
+    out.set_item("omitted", omitted(py, &archive.omitted)?)?;
     out.set_item("crs_wkt", archive.crs_wkt)?;
     out.set_item("seconds", started.elapsed().as_secs_f64())?;
     Ok(out)
@@ -155,7 +174,7 @@ pub(crate) fn hecras_archive_layers<'py>(
 ///
 /// Returns:
 ///     dict: `rows`, `layers`, `row_groups`, `bbox`, `layer_rows` (rows by layer name, HDF layers
-///     only), `skipped`, `crs_wkt` and `seconds`.
+///     only), `skipped`, `omitted`, `crs_wkt` and `seconds`.
 #[pyfunction]
 #[pyo3(signature = (
     path, out, *, extra_layers=None, extra_identity=None, order=None, crs=None, geometry=true, results=true,
@@ -201,13 +220,14 @@ pub(crate) fn write_hecras_archive<'py>(
     write.crs = crate::geoparquet::crs_value(py, crs)?;
     let out = out.to_str().ok_or_else(|| invalid("the output path is not valid Unicode"))?.to_string();
     let started = Instant::now();
-    let (report, archive_rows, skipped_layers, crs_wkt) = crate::with_warnings(py, move || {
+    let (report, archive_rows, skipped_layers, omitted_rows, crs_wkt) = crate::with_warnings(py, move || {
         let archive = read(path, o)?;
         let rows: Vec<(String, usize)> = archive.layers.iter().map(|l| (l.name.clone(), l.num_rows())).collect();
         let skipped = archive.skipped.clone();
+        let omitted = archive.omitted.clone();
         let wkt = archive.crs_wkt.clone();
         let report = write_archive(archive, extra, order.as_deref(), &out, &write)?;
-        Ok((report, rows, skipped, wkt))
+        Ok((report, rows, skipped, omitted, wkt))
     })?;
     let d = PyDict::new(py);
     d.set_item("rows", report.rows)?;
@@ -220,6 +240,7 @@ pub(crate) fn write_hecras_archive<'py>(
     }
     d.set_item("layer_rows", layer_rows)?;
     d.set_item("skipped", skipped(py, &skipped_layers)?)?;
+    d.set_item("omitted", omitted(py, &omitted_rows)?)?;
     d.set_item("crs_wkt", crs_wkt)?;
     d.set_item("seconds", started.elapsed().as_secs_f64())?;
     Ok(d)

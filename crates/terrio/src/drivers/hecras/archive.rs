@@ -24,7 +24,11 @@
 //!   layout, `Cell Last Iteration`, which stores no element `Location`) is listed in
 //!   [`HecRasArchive::skipped`] with the engine's reason, so that the caller can fill it from
 //!   another reader. Absent families are not listed. Damaged data and I/O errors fail.
+//! - **Degenerate breaklines** (fewer than two stored points) are left out of `breaklines` and
+//!   listed in [`HecRasArchive::omitted`], as ras-commander skips them; the other breaklines are
+//!   written. They are not a refusal of the layer, so they are not in `skipped`.
 
+use super::breaklines::{self, OmittedRow};
 use super::{HecRasHdf, error};
 use crate::Result;
 use crate::geoparquet::{
@@ -201,6 +205,8 @@ pub struct HecRasArchive {
     pub layers: Vec<ArchiveLayer>,
     /// What the engine refused, in reading order.
     pub skipped: Vec<ArchiveSkip>,
+    /// Stored rows left out of a written layer (degenerate breaklines), in reading order.
+    pub omitted: Vec<OmittedRow>,
     /// The stored `Projection` text (WKT), when the file stores one.
     pub crs_wkt: Option<String>,
 }
@@ -250,6 +256,7 @@ impl HecRasHdf {
         let base = LayerOptions::default().with_batch_rows(options.batch_rows);
         let mut layers = Vec::new();
         let mut skipped = Vec::new();
+        let mut omitted = Vec::new();
         if options.geometry {
             let wanted: Option<Vec<&str>> = match &options.layers {
                 None => None,
@@ -270,6 +277,30 @@ impl HecRasHdf {
                     continue;
                 }
                 let layer_options = base.with_ghost_cells(options.ghost_cell_points && canonical == "mesh_cell_points");
+                if canonical == breaklines::LAYER {
+                    match self.breaklines_layer(ARCHIVE_CONSUMER, name, &layer_options) {
+                        Ok(lines) => {
+                            for o in &lines.omitted {
+                                crate::warnings::warn(o.describe());
+                            }
+                            omitted.extend(lines.omitted);
+                            if lines.batches.iter().any(|b| b.num_rows() > 0) {
+                                let identity = std::iter::once(lines.identity.0).chain(lines.identity.1).collect();
+                                layers.push(ArchiveLayer {
+                                    name: name.to_string(),
+                                    kind: ArchiveLayerKind::Geometry { canonical: canonical.into() },
+                                    schema: lines.schema,
+                                    batches: lines.batches,
+                                    identity,
+                                });
+                            }
+                        }
+                        Err(e) if e.kind == ErrorKind::NotFound => {}
+                        Err(e) if refusal(&e) => skipped.push(skip(name, None, &e)),
+                        Err(e) => return Err(error::from_engine(e)),
+                    }
+                    continue;
+                }
                 match self.session.read_layer(canonical, None, &layer_options) {
                     Ok(layer) if layer.num_rows() == 0 => {}
                     Ok(layer) => layers.push(archive_layer(layer, name, ArchiveLayerKind::Geometry { canonical: canonical.into() })?),
@@ -283,7 +314,7 @@ impl HecRasHdf {
         if options.results {
             self.archive_summaries(options, base, &mut layers, &mut skipped)?;
         }
-        Ok(HecRasArchive { layers, skipped, crs_wkt: self.crs()? })
+        Ok(HecRasArchive { layers, skipped, omitted, crs_wkt: self.crs()? })
     }
 
     /// The stored 2D summary variables over every mesh, in name order; none for a file without

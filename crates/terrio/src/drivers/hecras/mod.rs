@@ -44,6 +44,7 @@
 #[cfg(feature = "parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
 pub mod archive;
+mod breaklines;
 pub(crate) mod driver;
 mod engine_layers;
 pub mod error;
@@ -52,6 +53,7 @@ mod mesh;
 mod one_d;
 mod series;
 
+pub use breaklines::{OmittedRow, TOO_FEW_POINTS};
 pub use mesh::{
     Extreme, JoinedField, MeshAttribute, MeshCellLayer, MeshCellOptions, MeshLayer, MeshOptions, OmittedCell, SummaryField, TimeStep,
 };

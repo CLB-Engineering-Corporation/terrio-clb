@@ -62,6 +62,18 @@ pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corp
 
 ## Unreleased
 
+### HECRAS: degenerate breaklines are left out, not the whole layer
+
+A breakline stored with fewer than two points no longer refuses `breaklines`: that row is left out
+and reported, and the other breaklines are read, as ras-commander's `HdfBndry.get_breaklines`
+does. On Spring_BLE g01 (HEC-RAS 6.1, 6,012 stored breaklines, row 6010 with one point) the layer
+now has ras-commander's 6,011 rows. The driver warns once per row left out;
+`hecras_archive_layers` and `write_hecras_archive` list them in a new `omitted` key
+(`HecRasArchive::omitted`, `OmittedRow`), not in `skipped`, because the layer itself is written.
+A breakline with no points, which the engine drew as a row without geometry, is left out the same
+way. A short part inside a longer breakline still refuses the layer. Fixtures:
+`scripts/make_hecras_breaklines_fixture.py`.
+
 ### CLB build: gdalwarp's `-wm`
 
 - `terrio warp --wm`, Python `terrio.warp(..., wm=)` and JavaScript `warp(src, { wm })` set the

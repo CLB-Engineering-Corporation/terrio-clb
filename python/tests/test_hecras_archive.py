@@ -103,3 +103,39 @@ def test_write_archive_with_extra_layers(tmp_path):
     assert json.loads(pq.read_schema(out).metadata[b"geo"])["columns"]["geometry"]["crs"] == "EPSG:4326"
     with pytest.raises(terrio.InvalidArgumentError):
         terrio.hecras.write_archive(PLAN, out, order=["nope"])
+
+
+def test_degenerate_breaklines_are_omitted_not_refused(tmp_path):
+    """A one-point and an empty breakline are left out and listed, as ras-commander skips them."""
+    import terrio.hecras
+
+    path = str(DATA / "breaklines_point.h5")
+    with pytest.warns(UserWarning, match="BREAKLINE_TOO_FEW_POINTS"):
+        found = terrio.hecras.archive_layers(path, results=False)
+    assert not any(s["layer"] == "breaklines" for s in found["skipped"])
+    keys = ("layer", "source_row", "point_count", "reason")
+    omitted = [tuple(o[k] for k in keys) for o in found["omitted"]]
+    assert omitted == [
+        ("breaklines", 2, 1, "BREAKLINE_TOO_FEW_POINTS"),
+        ("breaklines", 3, 0, "BREAKLINE_TOO_FEW_POINTS"),
+    ]
+    (layer,) = [layer for layer in found["layers"] if layer["name"] == "breaklines"]
+    table = pa.table(layer["table"])
+    assert table["bl_id"].to_pylist() == [0, 1, 4]
+    assert layer["identity"] == ["bl_id"]
+    out = tmp_path / "g.parquet"
+    with pytest.warns(UserWarning):
+        report = terrio.hecras.write_archive(path, str(out), results=False)
+    assert report["layer_rows"]["breaklines"] == 3
+    assert len(report["omitted"]) == 2
+    # Nothing is omitted on a file without degenerate breaklines.
+    good = terrio.hecras.archive_layers(str(DATA / "breaklines_good.h5"), results=False)
+    assert good["omitted"] == []
+
+
+def test_a_short_part_still_refuses_the_breaklines():
+    import terrio.hecras
+
+    found = terrio.hecras.archive_layers(str(DATA / "breaklines_short_part.h5"), results=False)
+    assert [s["layer"] for s in found["skipped"]] == ["breaklines"]
+    assert found["omitted"] == []

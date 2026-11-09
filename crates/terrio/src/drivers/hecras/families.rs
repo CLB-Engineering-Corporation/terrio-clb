@@ -96,9 +96,19 @@ impl HecRasHdf {
     /// ([`super::engine_layers`]), in its stored order, with `source_row` and the stored
     /// attribute columns under terrio's names. A feature HEC-RAS stores without drawn geometry
     /// (some structures) is a feature without geometry.
+    ///
+    /// `breaklines` leaves out a breakline with fewer than two stored points, as ras-commander
+    /// does, and warns once per row left out ([`super::breaklines`]).
     pub(crate) fn family_layer(&self, name: &str, family: Family) -> crate::Result<Layer> {
-        let engine = self.engine_layer(name, &LayerOptions::default())?;
-        let rows = engine_layers::rows(&engine)?;
+        let rows = if name == super::breaklines::LAYER {
+            let lines = self.breaklines_layer(engine_layers::CONSUMER, name, &LayerOptions::default()).map_err(error::from_engine)?;
+            for o in &lines.omitted {
+                crate::warnings::warn(o.describe());
+            }
+            engine_layers::rows_of(&lines.name, &lines.schema, &lines.batches, &lines.identity)?
+        } else {
+            engine_layers::rows(&self.engine_layer(name, &LayerOptions::default())?)?
+        };
         let mut layer = Layer::new(name);
         if let Some(wkt) = self.crs()? {
             layer = layer.with_crs_wkt(wkt);

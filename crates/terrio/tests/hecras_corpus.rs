@@ -659,6 +659,14 @@ fn check_stored(hdf: &HecRasHdf, file: &str, want: &Value) -> usize {
         let l = hdf.read_layer(layer).unwrap_or_else(|e| panic!("{file} {layer}: {e}"));
         let features = by_source_row(&l);
         assert_eq!(features.len() as u64, table["rows"].as_u64().unwrap(), "{file} {layer}: one feature per attribute row");
+        // Rows the oracle leaves out (breaklines of fewer than two points) are the rows missing here.
+        if let Some(omitted) = table.get("omitted_rows").and_then(|o| o.as_array()) {
+            let rows: std::collections::HashSet<i64> =
+                features.iter().map(|f| if let FieldValue::Integer(r) = f.attributes[0] { r } else { -1 }).collect();
+            for r in omitted {
+                assert!(!rows.contains(&r.as_i64().unwrap()), "{file} {layer}: omitted row {r} is present");
+            }
+        }
         checked += check_columns(&l, &features, &table["columns"], &format!("{file} {layer}"));
     }
 
