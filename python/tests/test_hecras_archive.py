@@ -113,7 +113,8 @@ def test_degenerate_breaklines_are_omitted_not_refused(tmp_path):
     with pytest.warns(UserWarning, match="BREAKLINE_TOO_FEW_POINTS"):
         found = terrio.hecras.archive_layers(path, results=False)
     assert not any(s["layer"] == "breaklines" for s in found["skipped"])
-    assert [(o["layer"], o["source_row"], o["point_count"], o["reason"]) for o in found["omitted"]] == [
+    omitted = [(o["layer"], o["source_row"], o["point_count"], o["reason"]) for o in found["omitted"]]
+    assert omitted == [
         ("breaklines", 2, 1, "BREAKLINE_TOO_FEW_POINTS"),
         ("breaklines", 3, 0, "BREAKLINE_TOO_FEW_POINTS"),
     ]
@@ -127,7 +128,8 @@ def test_degenerate_breaklines_are_omitted_not_refused(tmp_path):
     assert report["layer_rows"]["breaklines"] == 3
     assert len(report["omitted"]) == 2
     # Nothing is omitted on a file without degenerate breaklines.
-    assert terrio.hecras.archive_layers(str(DATA / "breaklines_good.h5"), results=False)["omitted"] == []
+    good = terrio.hecras.archive_layers(str(DATA / "breaklines_good.h5"), results=False)
+    assert good["omitted"] == []
 
 
 def test_a_short_part_still_refuses_the_breaklines():

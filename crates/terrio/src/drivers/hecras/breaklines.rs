@@ -151,10 +151,8 @@ impl HecRasHdf {
         fields.extend(f);
         columns.extend(c);
         let mask = BooleanArray::from(keep);
-        let mut columns = columns
-            .iter()
-            .map(|c| arrow_select::filter::filter(c.as_ref(), &mask).map_err(arrow_error))
-            .collect::<Result<Vec<_>>>()?;
+        let mut columns =
+            columns.iter().map(|c| arrow_select::filter::filter(c.as_ref(), &mask).map_err(arrow_error)).collect::<Result<Vec<_>>>()?;
         fields.push(geometry_field());
         columns.push(Arc::new(geoms.finish()));
         let schema = Arc::new(Schema::new(fields));

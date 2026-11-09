@@ -6,8 +6,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use std::time::Instant;
 use terrio::geoparquet::{ArrowLayer, GeoParquetWriteOptions, MemoryLayer};
-use terrio::hecras::{HecRasHdf, OmittedRow};
 use terrio::hecras::archive::{ArchiveLayerKind, ArchiveOptions, ArchiveSkip, HecRasArchive, write_archive};
+use terrio::hecras::{HecRasHdf, OmittedRow};
 
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hecras_archive_layers, m)?)?;

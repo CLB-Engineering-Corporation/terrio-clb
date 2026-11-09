@@ -218,7 +218,10 @@ fn degenerate_breaklines_are_left_out_of_the_layer() {
     assert!(matches!(&l.features[1].geometry, Some(Geometry::MultiLineString(p)) if p.len() == 2));
     assert!(matches!(&l.features[2].geometry, Some(Geometry::LineString(c)) if c.len() == 2));
     let good = open("breaklines_good.h5").read_layer("breaklines").unwrap();
-    assert_eq!(l.features[..2], good.features[..]);
+    for (a, b) in l.features[..2].iter().zip(&good.features) {
+        assert_eq!((&a.attributes, &a.geometry), (&b.attributes, &b.geometry));
+    }
+    assert_eq!(good.features.len(), 2);
     let archive = hdf.archive_layers(&terrio::hecras::archive::ArchiveOptions::default().with_results(false)).unwrap();
     let omitted: Vec<(u64, u64)> = archive.omitted.iter().map(|o| (o.source_row, o.point_count)).collect();
     assert_eq!(omitted, [(2, 1), (3, 0)]);

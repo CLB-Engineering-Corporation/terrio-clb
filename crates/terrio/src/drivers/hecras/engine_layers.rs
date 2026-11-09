@@ -100,13 +100,13 @@ pub(crate) fn rows_of(
         };
         for row in 0..batch.num_rows() {
             let values = arrays.iter().map(|a| value(a.as_ref(), row, &name)).collect::<crate::Result<Vec<_>>>()?;
-            let geometry =
-                match wkb {
-                    Some(w) if !w.is_null(row) => Some(decode_wkb(w.value(row)).ok_or_else(|| {
-                        crate::Error::InvalidData(format!("HEC-RAS {} row {row}: WKB the driver does not map", name))
-                    })?),
-                    _ => None,
-                };
+            let geometry = match wkb {
+                Some(w) if !w.is_null(row) => Some(
+                    decode_wkb(w.value(row))
+                        .ok_or_else(|| crate::Error::InvalidData(format!("HEC-RAS {} row {row}: WKB the driver does not map", name)))?,
+                ),
+                _ => None,
+            };
             rows.push((values, geometry));
         }
     }

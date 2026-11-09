@@ -53,11 +53,11 @@ mod mesh;
 mod one_d;
 mod series;
 
+pub use breaklines::{OmittedRow, TOO_FEW_POINTS};
 pub use mesh::{
     Extreme, JoinedField, MeshAttribute, MeshCellLayer, MeshCellOptions, MeshLayer, MeshOptions, OmittedCell, SummaryField, TimeStep,
 };
 pub use one_d::{CrossSectionField, CrossSectionLayer, CrossSectionOptions, CrossSectionTable};
-pub use breaklines::{OmittedRow, TOO_FEW_POINTS};
 pub use ras_commander_fast_hdf::hdf::ResultMode;
 pub use ras_commander_fast_hdf::mesh::{GeometryPolicy, OmissionKind};
 pub use series::{FeatureSeriesOptions, SeriesField, SeriesLayer};

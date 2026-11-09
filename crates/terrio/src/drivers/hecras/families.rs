@@ -101,9 +101,7 @@ impl HecRasHdf {
     /// does, and warns once per row left out ([`super::breaklines`]).
     pub(crate) fn family_layer(&self, name: &str, family: Family) -> crate::Result<Layer> {
         let rows = if name == super::breaklines::LAYER {
-            let lines = self
-                .breaklines_layer(engine_layers::CONSUMER, name, &LayerOptions::default())
-                .map_err(error::from_engine)?;
+            let lines = self.breaklines_layer(engine_layers::CONSUMER, name, &LayerOptions::default()).map_err(error::from_engine)?;
             for o in &lines.omitted {
                 crate::warnings::warn(o.describe());
             }
