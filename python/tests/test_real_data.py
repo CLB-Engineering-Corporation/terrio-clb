@@ -351,6 +351,41 @@ def test_warp_matches_gdal(data_dir, gdal, tmp_path):
     assert np.mean(a == b) > 0.999
 
 
+@pytest.mark.parametrize("resampling", ["near", "bilinear"])
+def test_warp_memory_is_gdalwarps_wm(data_dir, gdal, tmp_path, resampling):
+    """`wm` is read as `gdalwarp -wm` reads it, and each value warps the chunks GDAL warps: the
+    1568 x 1568 Float32 ECOSTRESS scene to EPSG:4326 at 64 MB (whole), 4 MB, 1 MB and 500,000
+    bytes (many chunks), in memory and path to path, against `gdal.Warp` with the same `-wm`.
+    Nearest is exact; bilinear within the ops suite's 1e-3."""
+    path = raster_path(data_dir, "ECOv002_L2T_LSTE_26860_001_10SGD_20230401T203733_0710_01_LST.tif")
+    for wm in ["64MB", "0", "4", "1", "500000"]:
+        ref = gdal.Warp(
+            str(tmp_path / "gdal.tif"),
+            path,
+            options=["-t_srs", "EPSG:4326", "-r", resampling, "-wm", wm],
+        )
+        expected = ref.GetRasterBand(1).ReadAsArray()
+        transform = ref.GetGeoTransform()
+        ref = None
+        number = int(wm) if wm.isdigit() else wm
+        for out in [
+            terrio.warp(path, t_srs="EPSG:4326", resampling=resampling, wm=number),
+            terrio.warp(
+                path, dst=str(tmp_path / "t.tif"), t_srs="EPSG:4326", resampling=resampling, wm=wm
+            ),
+        ]:
+            assert out.transform == pytest.approx(transform, rel=1e-12), wm
+            got = out.read(1)
+            assert got.shape == expected.shape and got.dtype == expected.dtype, wm
+            assert np.array_equal(np.isnan(got), np.isnan(expected)), wm
+            if resampling == "near":
+                np.testing.assert_array_equal(got, expected, err_msg=wm)
+            else:
+                np.testing.assert_allclose(
+                    got, expected, rtol=0, atol=1e-3, equal_nan=True, err_msg=wm
+                )
+
+
 def test_mosaic_round_trip(data_dir, tmp_path):
     path = raster_path(data_dir, "srtm_sub.tif")
     r = terrio.open_raster(path)

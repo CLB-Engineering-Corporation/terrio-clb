@@ -219,7 +219,16 @@ struct WarpArgs {
     ot: Option<String>,
     crop_to_cutline: bool,
     et: Option<f64>,
-    wm: Option<f64>,
+    wm: Option<MemoryArg>,
+}
+
+/// A warp's working memory, as `gdalwarp -wm`: a number (megabytes below 10000, bytes from
+/// 10000) or a string with a unit (`"512MB"`, `"2G"`).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MemoryArg {
+    Number(f64),
+    Text(String),
 }
 
 /// Reprojects, resamples, crops or mosaics rasters, as `terrio warp` (GDAL's `gdalwarp`).
@@ -229,8 +238,9 @@ struct WarpArgs {
 /// (`near`, `bilinear`, `cubic`, `cubicspline`, `lanczos`, `average`, `rms`, `mode`, `min`,
 /// `max`, `med`, `q1`, `q3`, `sum`), `srcNodata` and `dstNodata` (a number, one per band, or
 /// `"none"`), `ot`, `cutline` (polygons: a `Dataset`, bytes or GeoJSON), `cropToCutline`, `et`
-/// (the approximate transformer's error in pixels, 0.125 by default) and `wm` (working memory in
-/// bytes). `geoloc` requires array metadata; `geolocation: { x, y, pixelStep, lineStep,
+/// (the approximate transformer's error in pixels, 0.125 by default) and `wm` (the working memory
+/// of a chunk, as `gdalwarp -wm`: a number of megabytes below 10000 and of bytes from 10000, or a
+/// string with a unit such as `"512MB"`; 64 MB by default, and 0 keeps it). `geoloc` requires array metadata; `geolocation: { x, y, pixelStep, lineStep,
 /// pixelOffset, lineOffset, pixelCenter, xBand, yBand, srs }` supplies coordinate rasters for the first source.
 #[wasm_bindgen]
 pub fn warp(src: JsValue, options: JsValue) -> Result<Dataset, JsError> {
@@ -271,8 +281,10 @@ pub fn warp(src: JsValue, options: JsValue) -> Result<Dataset, JsError> {
         error_threshold: a.et.unwrap_or(0.125),
         ..Default::default()
     };
-    if let Some(wm) = a.wm {
-        o.memory_limit = wm;
+    match a.wm {
+        Some(MemoryArg::Number(n)) => o.memory_limit = terrio::ops::warp::warp_memory_from_number(n).map_err(js_err)?,
+        Some(MemoryArg::Text(t)) => o.memory_limit = terrio::ops::warp::parse_warp_memory(&t).map_err(js_err)?,
+        None => {}
     }
     let items: Vec<JsValue> = if js_sys::Array::is_array(&src) { js_sys::Array::from(&src).iter().collect() } else { vec![src] };
     let mut sources = items
