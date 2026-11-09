@@ -53,7 +53,18 @@ jobs:
           cargo_exe="$(rustup which cargo)"
           cargo_exe="${cargo_exe//\\//}"
           echo "${cargo_exe%/*}" >> "$GITHUB_PATH"
+      # Self-hosted Windows x64: pip's maturin, built natively. maturin-action fails on that
+      # image, which has only Windows PowerShell 5.1 (Expand-Archive rejects the action's
+      # download). Same arguments; GitHub-hosted entries keep the action.
+      - name: Build the wheel (self-hosted)
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        working-directory: python
+        run: |
+          python -m pip install --upgrade maturin
+          python -m maturin build --release --out dist
       - uses: PyO3/maturin-action@v1
+        if: runner.environment != 'self-hosted'
         with:
           working-directory: python
           target: ${{ matrix.platform.target }}

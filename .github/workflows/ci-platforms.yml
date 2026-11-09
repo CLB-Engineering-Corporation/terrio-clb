@@ -132,7 +132,18 @@ jobs:
           cargo_exe="$(rustup which cargo)"
           cargo_exe="${cargo_exe//\\//}"
           echo "${cargo_exe%/*}" >> "$GITHUB_PATH"
+      # Windows: pip's maturin. maturin-action fails on the self-hosted Windows image, which
+      # has only Windows PowerShell 5.1: Expand-Archive rejects the action's download
+      # (NotSupportedArchiveFileExtension, run 42699873858). Same arguments; no sccache.
+      - name: Build the wheel (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: python
+        run: |
+          python -m pip install --upgrade maturin
+          python -m maturin build --release --out dist
       - name: Build the wheel
+        if: runner.os != 'Windows'
         uses: PyO3/maturin-action@v1
         with:
           working-directory: python
