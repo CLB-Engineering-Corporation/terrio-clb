@@ -25,6 +25,10 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+# Runners: Windows runs on CLB's self-hosted Slurm runner (clb-ci-windows); pull requests from
+# forks fall back to GitHub-hosted windows-latest, so they never reach a self-hosted runner. macOS
+# stays GitHub-hosted, and so does the platform picker (a few seconds, no checkout: it should not
+# wait for a busy self-hosted runner).
 jobs:
   # The runners the labels or the manual run ask for: a JSON list, empty for none.
   platforms:
@@ -70,7 +74,8 @@ jobs:
       group: ci-platforms-check-${{ matrix.os }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests and macOS -> GitHub-hosted matrix.os; Windows otherwise self-hosted.
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository || matrix.os != 'windows-latest') && format('["{0}"]', matrix.os) || '["self-hosted", "Windows", "X64", "clb-ci-windows"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +85,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # Self-hosted Windows (CARGO_HOME=C:\rust\cargo) can have rustup on PATH without the
+      # cargo/rustc proxies: put the selected toolchain's directory on PATH for later steps.
+      - name: Put the toolchain's cargo on PATH
+        shell: bash
+        run: |
+          cargo_exe="$(rustup which cargo)"
+          cargo_exe="${cargo_exe//\\//}"
+          echo "${cargo_exe%/*}" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Never restore Cargo's bin folder: the self-hosted Windows image keeps rustup's
+          # proxies there.
+          cache-bin: "false"
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -92,7 +109,8 @@ jobs:
       group: ci-platforms-python-${{ matrix.os }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     name: python (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests and macOS -> GitHub-hosted matrix.os; Windows otherwise self-hosted.
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository || matrix.os != 'windows-latest') && format('["{0}"]', matrix.os) || '["self-hosted", "Windows", "X64", "clb-ci-windows"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +120,30 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      # maturin-action uses the toolchain on PATH; on the self-hosted Windows image put cargo there.
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Windows'
+      # Self-hosted Windows (CARGO_HOME=C:\rust\cargo) can have rustup on PATH without the
+      # cargo/rustc proxies: put the selected toolchain's directory on PATH for later steps.
+      - name: Put the toolchain's cargo on PATH
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo_exe="$(rustup which cargo)"
+          cargo_exe="${cargo_exe//\\//}"
+          echo "${cargo_exe%/*}" >> "$GITHUB_PATH"
+      # Windows: pip's maturin. maturin-action fails on the self-hosted Windows image, which
+      # has only Windows PowerShell 5.1: Expand-Archive rejects the action's download
+      # (NotSupportedArchiveFileExtension, run 42699873858). Same arguments; no sccache.
+      - name: Build the wheel (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: python
+        run: |
+          python -m pip install --upgrade maturin
+          python -m maturin build --release --out dist
       - name: Build the wheel
+        if: runner.os != 'Windows'
         uses: PyO3/maturin-action@v1
         with:
           working-directory: python

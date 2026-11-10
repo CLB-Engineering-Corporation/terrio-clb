@@ -16,12 +16,15 @@ concurrency:
   group: release-dry-run-${{ github.ref }}
   cancel-in-progress: true
 
+# Runners: the crates and licenses checks run on CLB's self-hosted Slurm runner (clb-ci-linux),
+# and so do the self-hosted jobs of release-build.yml. Dispatched by hand only: no fork pull request
+# reaches these jobs.
 jobs:
   build:
     uses: ./.github/workflows/release-build.yml
 
   crates:
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "Linux", "X64", "clb-ci-linux"]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -36,7 +39,7 @@ jobs:
 
   # LICENSE-THIRD-PARTY.md, which the packages ship, lists the dependencies being released.
   licenses:
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "Linux", "X64", "clb-ci-linux"]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -49,6 +52,7 @@ jobs:
           cargo about generate --locked --all-features --fail about.hbs -o LICENSE-THIRD-PARTY.md
           git diff --exit-code LICENSE-THIRD-PARTY.md
 
+  # GitHub-hosted: it installs clang 20 with root apt, which the self-hosted runner cannot.
   npm:
     runs-on: ubuntu-latest
     steps:

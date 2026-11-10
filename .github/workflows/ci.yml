@@ -17,11 +17,16 @@ env:
   # CI restores dependencies; per-checkout incremental state is larger and not reused.
   CARGO_INCREMENTAL: 0
 
+# Runners: CLB's self-hosted Slurm runners (clb-ci-linux) for every build and test job, except
+# where noted; pull requests from forks fall back to GitHub-hosted runners, so they never reach a
+# self-hosted runner. The self-hosted Linux runner is a container without root (no sudo, no
+# Docker) and without the gh CLI.
 jobs:
   # Whether the real-data job runs: on every push to main, and for pull requests unless they
   # change only documentation, the npm package's JavaScript (js/, tested by the wasm job) or
   # other workflows. When the file list is unavailable, it runs.
   changes:
+    # GitHub-hosted: it calls the gh CLI, which the self-hosted image does not have.
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
@@ -66,16 +71,27 @@ jobs:
   # ci:npm, ci:conformance or ci:all).
   check:
     name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests -> GitHub-hosted matrix.os; otherwise the self-hosted labels.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && format('["{0}"]', matrix.os) || matrix.self_hosted || format('["{0}"]', matrix.os)) }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        include:
+          - os: ubuntu-latest
+            self_hosted: '["self-hosted", "Linux", "X64", "clb-ci-linux"]'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -102,7 +118,7 @@ jobs:
 
   gdal:
     name: GDAL backend (feature build)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -111,6 +127,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal-backend
           # The GDAL the real-data job compares with, and the drivers the tests use.
           create-args: libgdal-core=3.12.2 proj=9.8.1 libgdal-hdf4 libgdal-hdf5 libgdal-netcdf libgdal-kea
@@ -130,7 +149,7 @@ jobs:
 
   msrv:
     name: MSRV (Rust 1.90)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       # The `rust-version` of Cargo.toml: keep the two in step. It is an input, not the action's ref,
@@ -145,7 +164,7 @@ jobs:
 
   api-docs:
     name: API docs and packaging
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -176,10 +195,14 @@ jobs:
         run: |
           for f in python/LICENSE crates/terrio/LICENSE crates/terrio-cli/LICENSE crates/terrio-crs/LICENSE; do cmp LICENSE "$f"; done
           cmp NOTICE crates/terrio/NOTICE
+      # The self-hosted image has uv but not pipx.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
       - name: The Python sdist carries the license
         working-directory: python
         run: |
-          pipx run maturin sdist --out dist
+          uvx maturin sdist --out dist
           tar tzf dist/*.tar.gz > sdist.list
           grep -qx '[^/]*/python/LICENSE' sdist.list
       # As the release builds it: the notices copied in, all three files in the sdist.
@@ -187,7 +210,7 @@ jobs:
         working-directory: python
         run: |
           cp ../NOTICE ../LICENSE-THIRD-PARTY.md .
-          rm -rf dist && pipx run maturin sdist --out dist
+          rm -rf dist && uvx maturin sdist --out dist
           python3 ../.github/scripts/check-license-files.py dist/*.tar.gz
       - name: The crates carry LICENSE and NOTICE
         run: |
@@ -203,7 +226,7 @@ jobs:
           grep -qx data/esri.tsv.zst terrio-crs.list
 
   wasm:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -231,6 +254,8 @@ jobs:
   # core without them, natively and for WebAssembly.
   features:
     name: Cargo features
+    # GitHub-hosted: the WebAssembly checks of terrio-crs --all-features compile the zstd C library
+    # with clang, which the self-hosted image does not have.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -281,6 +306,8 @@ jobs:
 
   python:
     name: python (${{ matrix.os }})
+    # GitHub-hosted: maturin-action builds the manylinux wheel in a Docker container, which the
+    # self-hosted runner does not have.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -324,13 +351,23 @@ jobs:
     name: real data vs GDAL
     needs: changes
     if: needs.changes.outputs.real-data == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal
           # The reference: the EPSG table and test points come from GDAL 3.12.2 and PROJ 9.8.1, and
           # newer EPSG databases change some transformations. rasterio comes from pip (with its
@@ -383,7 +420,7 @@ jobs:
   hecras-corpus:
     name: HEC-RAS 7.0.1 corpus vs h5py
     if: vars.TERRIO_SKIP_HECRAS_CORPUS != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     env:
       CORPUS_REPO: gpt-cmdr/ras-hdf-test-corpus
       CORPUS_TAG: v1.0.1
@@ -411,13 +448,23 @@ jobs:
 
   conformance:
     name: point clouds and conformance vs GDAL
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal
           # As in the real-data job: the two share the cached environment.
           create-args: gdal=3.12.2 libgdal-core=3.12.2 proj=9.8.1 libgdal-arrow-parquet libgdal-jp2openjpeg libgdal-netcdf libgdal-hdf5 libgdal-grib numpy pip pytest maturin pyproj pdal laspy lazrs-python pyarrow geopandas shapely

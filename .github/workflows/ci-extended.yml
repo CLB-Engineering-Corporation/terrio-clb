@@ -26,6 +26,10 @@ env:
   # CI restores dependencies; per-checkout incremental state is larger and not reused.
   CARGO_INCREMENTAL: 0
 
+# Runners: the conformance job runs on CLB's self-hosted Slurm runners (clb-ci-linux); pull
+# requests from forks fall back to GitHub-hosted runners, so they never reach a self-hosted
+# runner. The job picker stays GitHub-hosted (a few seconds, no checkout: it should not wait for a
+# busy self-hosted runner), and so does the npm job (below).
 jobs:
   # The jobs the labels or the manual run ask for.
   pick:
@@ -67,6 +71,8 @@ jobs:
     concurrency:
       group: ci-extended-npm-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    # GitHub-hosted: it installs clang 20 and Playwright's browser dependencies with root apt,
+    # which the self-hosted runner (a container without root) cannot.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -146,13 +152,23 @@ jobs:
     concurrency:
       group: ci-extended-conformance-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # pyo3 (the terrio-py workspace member) links libpython. The self-hosted image's system
+      # python3 has no libpython, which GitHub's image provides: use the toolcache Python 3.13 the
+      # image ships (pyo3 links from its sysconfig LIBDIR, under /opt/hostedtoolcache).
+      - uses: actions/setup-python@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - uses: mamba-org/setup-micromamba@v3
         with:
+          # Per job: a self-hosted runner keeps its home between jobs, and the action refuses to
+          # download micromamba over an existing binary.
+          micromamba-binary-path: ${{ runner.temp }}/micromamba-bin/micromamba
           environment-name: gdal
           # As in ci.yml's real-data job: the two share the cached environment.
           create-args: gdal=3.12.2 libgdal-core=3.12.2 proj=9.8.1 libgdal-arrow-parquet libgdal-jp2openjpeg libgdal-netcdf libgdal-hdf5 libgdal-grib numpy pip pytest maturin pyproj pdal laspy lazrs-python pyarrow geopandas shapely
